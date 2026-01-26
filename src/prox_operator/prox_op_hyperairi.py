@@ -26,7 +26,7 @@ class ProxOpHyperAIRI(ProxOp):
         self,
         rank_num_ch: int,
         rank_ch_start: int,
-        ch_freq: list,
+        ch_freq: torch.Tensor,
         shelf_path: str,
         rand_trans: bool = True,
         device: torch.device = torch.device("cpu"),
@@ -39,7 +39,7 @@ class ProxOpHyperAIRI(ProxOp):
         Args:
             rank_num_ch (int): Number of channels assigned to the current rank.
             rank_ch_start (int): Starting channel index for the current rank.
-            num_ch (tuple): Number of channels of each rank.
+            ch_freq (torch.Tensor): Frequencies of the channels.
             shelf_path (str): Path to the CSV file containing the denoiser shelf.
             rand_trans (bool, optional): If True, apply random transformations to the input
                 before applying denoisers. Defaults to True.
@@ -52,7 +52,7 @@ class ProxOpHyperAIRI(ProxOp):
         self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
-        self._ch_freq = ch_freq
+        self._ch_freq = ch_freq.flatten()
         self._list_net_scaling = [1.0 for _ in range(rank_num_ch)]
         self._shelf = {}
         self._list_network = [None for _ in range(rank_num_ch)]
@@ -162,7 +162,10 @@ class ProxOpHyperAIRI(ProxOp):
                 x_trans = x_trans.contiguous()
             else:
                 x_trans = net_input.contiguous()
-            result_ch = self._list_network[i](x_trans / self._list_net_scaling[i]) * self._list_net_scaling[i]
+            result_ch = (
+                self._list_network[i](x_trans / self._list_net_scaling[i])
+                * self._list_net_scaling[i]
+            )
             if self._rand_trans:
                 result_ch = torch.rot90(result_ch, k=-rot_times, dims=[2, 3])
                 result_ch = torch.flip(result_ch, dims=flip_dim)
@@ -178,8 +181,8 @@ class ProxOpHyperAIRI(ProxOp):
 
     def update(
         self,
-        list_heuristic: list = None,
-        list_peak_est: list = None,
+        ch_heuristic: torch.Tensor = None,
+        ch_peak_est: torch.Tensor = None,
         spec_idx: torch.Tensor = None,
     ) -> None:
         """
@@ -191,10 +194,15 @@ class ProxOpHyperAIRI(ProxOp):
             heuristic (float): The heuristic noise level.
             peak_est (float): The estimated maximum intensity.
         """
-        peak_min = [0.0 for _ in range(len(list_heuristic))]
-        peak_max = [0.0 for _ in range(len(list_heuristic))]
+        peak_min = torch.empty_like(
+            ch_heuristic, device=self._device, dtype=self._dtype
+        ).flatten()
+        peak_max = torch.empty_like(
+            ch_heuristic, device=self._device, dtype=self._dtype
+        ).flatten()
 
-        if list_heuristic and list_peak_est:
+        if ch_heuristic is not None and ch_peak_est is not None:
+            ch_heu_peak = ch_heuristic / ch_peak_est
             if self._verbose:
                 if self._is_dist:
                     dist.barrier()
@@ -206,24 +214,25 @@ class ProxOpHyperAIRI(ProxOp):
                 if self._is_dist:
                     dist.barrier()
 
-            for i in range(len(list_heuristic)):
+            for i in range(self._rank_num_ch):
                 sigma_s = max(
                     filter(
-                        lambda sigma: sigma <= list_heuristic[i] / list_peak_est[i],
+                        lambda sigma: sigma <= ch_heu_peak.view(-1)[i].item(),
                         self._shelf.keys(),
                     ),
                     default=None,
                 )
                 if sigma_s:
-                    peak_max[i] = list_heuristic[i] / sigma_s
+                    peak_max[i] = ch_heuristic.view(-1)[i] / sigma_s
                     sigma_s1 = min(
-                        filter(lambda sigma: sigma > sigma_s, self._shelf.keys()), default=None
+                        filter(lambda sigma: sigma > sigma_s, self._shelf.keys()),
+                        default=None,
                     )
                     if sigma_s1:
-                        peak_min[i] = list_heuristic[i] / sigma_s1
+                        peak_min[i] = ch_heuristic.view(-1)[i] / sigma_s1
                 else:
                     sigma_s = min(self._shelf.keys())
-                    peak_min[i] = list_heuristic[i] / sigma_s
+                    peak_min[i] = ch_heuristic.view(-1)[i] / sigma_s
                     peak_max[i] = float("inf")
 
                 if abs(self._list_network_sigma[i] - sigma_s) > 1e-10:
@@ -231,23 +240,23 @@ class ProxOpHyperAIRI(ProxOp):
                     self._list_network[i] = (
                         convert(self._shelf[sigma_s]).to(self._device).eval()
                     )
-                    self._list_net_scaling[i] = list_heuristic[i] / sigma_s
+                    self._list_net_scaling[i] = ch_heuristic.view(-1)[i] / sigma_s
 
                     if self._verbose:
                         print(
-                            f"SHELF *** Channel {self._rank_ch_start + i}: heu/peak {list_heuristic[i]/list_peak_est[i]:.3e}, "
+                            f"SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak.view(-1)[i].item():.3e}, "
                             f"using network: {os.path.basename(self._shelf[sigma_s])}, "
-                            f"peak range: [{peak_min[i]:.3e}, {peak_max[i]:.3e}], "
+                            f"peak range: [{peak_min[i].item():.3e}, {peak_max[i].item():.3e}], "
                             f"scaling factor: {self._list_net_scaling[i]:.3e}",
                             flush=True,
                         )
 
-        if self._is_dist:
-            dist.barrier()
-            if self._verbose and self._rank == 0:
-                print("-------------------------------------------", flush=True)
+            if self._is_dist:
+                dist.barrier()
+                if self._verbose and self._rank == 0:
+                    print("-------------------------------------------", flush=True)
 
-        if isinstance(spec_idx, torch.Tensor):
+        if spec_idx is not None:
             for ch in range(
                 self._rank_ch_start, self._rank_num_ch + self._rank_ch_start
             ):
@@ -260,13 +269,11 @@ class ProxOpHyperAIRI(ProxOp):
                 self._list_spec_corr_weight[ch - self._rank_ch_start] = (
                     freq_ratio.view(1, 3, 1, 1) ** spec_idx / 3.0
                 )
-                print(f"DEBUG: ch {ch}, freq_ratio0: {freq_ratio[0].item():.3f}, freq_ratio1: {freq_ratio[1].item():.3f}, freq_ratio2: {freq_ratio[2].item():.3f}", flush=True)
 
-            if self._verbose:
-                if self._rank == 0:
-                    print("\nINFO: Update spectral correction weights.", flush=True)
+            if self._verbose and self._rank == 0:
+                print("\nINFO: Update spectral correction weights.", flush=True)
 
-        if self._is_dist:
-            dist.barrier()
+            if self._is_dist:
+                dist.barrier()
 
-        return (tuple(peak_min), tuple(peak_max))
+        return (peak_min.view(1, -1, 1, 1), peak_max.view(1, -1, 1, 1))

@@ -1,0 +1,547 @@
+"""
+Unconstrained AIRI, built on forward-backward algorithm
+"""
+
+import os
+from typing import Union
+import torch
+import torch.distributed as dist
+import numpy as np
+from astropy.io import fits
+
+from .forward_backward import ForwardBackward
+from ..prox_operator import ProxOpAIRI
+from ..ri_measurement_operator.pysrc.measOperator import MeasOpHyperspectral
+from ..ri_measurement_operator.pysrc.measOperator.meas_op_PSF import (
+    MeasOpPSF,
+)
+from ..utils.spectral_index import fit_clean_beam
+
+
+class FBHyperAIRI(ForwardBackward):
+    """
+    FBHyperAIRI implements the AIRI algorithm based on Forward-Backward.
+
+    It handles data fidelity in the forward step and uses AIRI denoisers
+    in the backward step for regularization.
+    """
+
+    def __init__(
+        self,
+        meas: torch.Tensor,
+        ch_freq: torch.Tensor,
+        meas_op: MeasOpHyperspectral,
+        prox_op: ProxOpAIRI,
+        meas_op_approx: Union[MeasOpPSF, None] = None,
+        ch_start: int = 0,
+        im_min_itr: int = 100,
+        im_max_itr: int = 2000,
+        im_var_tol: float = 1e-4,
+        im_peak_est: Union[torch.Tensor, None] = None,
+        heu_noise_scale: float = 1.0,
+        adapt_net_select: bool = True,
+        peak_tol_min: float = 1e-3,
+        peak_tol_max: float = 0.1,
+        peak_tol_step: float = 0.1,
+        spec_update: bool = True,
+        spec_max_update_count: int = 20,
+        spec_max_update_interval: int = 200,
+        spec_update_tol_max: float = 1e-2,
+        spec_update_tol_min: float = 1e-5,
+        spec_update_tol_step: float = 0.5,
+        verbose: bool = True,
+        save_pth: str = "results",
+        file_prefix: str = "",
+        iter_save: int = 1000,
+    ) -> None:
+        """
+        Initializes the AIRI optimiser, which is built on forward-backward algorithm.
+
+        Args:
+            meas (torch.Tensor): The measurement tensor.
+            meas_op (MeasOpHyperspectral): The measurement operator.
+            prox_op (ProxOpAIRI): The proximal operator.
+            meas_op_approx (Union[MeasOpPSF, None], optional): The approximate measurement
+                operator build on oversampled PSF. The AIRI algorithm will use this operator
+                for reconstruction if it is not None. Defaults to None.
+            im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
+            im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
+            im_var_tol (float, optional): The tolerance for image variation. Defaults to 1e-4.
+            im_peak_est (Union[torch.Tensor, None], optional): The estimated peak of the image. Defaults to None.
+            heu_noise_scale (float, optional): The heuristic noise scale. Defaults to 1.0.
+            adapt_net_select (bool, optional): Whether to adapt network selection. Defaults to True.
+            peak_tol_min (float, optional): The minimum tolerance for peak. Defaults to 1e-3.
+            peak_tol_max (float, optional): The maximum tolerance for peak. Defaults to 0.1.
+            peak_tol_step (float, optional): The step size for peak tolerance. Defaults to 0.1.
+            spec_update (bool, optional): Whether to update spectral index map. Defaults to True.
+            spec_max_update_count (int, optional): The maximum number of spectral index map updates.
+                Defaults to 20.
+            spec_max_update_interval (int, optional): The maximum interval between spectral index map updates.
+                Defaults to 200.
+            spec_tol_max (float, optional): The maximum tolerance for spectral index map update. Defaults to 1e-1.
+            spec_tol_min (float, optional): The minimum tolerance for spectral index map update. Defaults to 1e-3.
+            spec_tol_step (float, optional): The step size for spectral index map update tolerance. Defaults to 0.5.
+            verbose (bool, optional): Whether to print verbose logs. Defaults to True.
+            save_pth (str, optional): The path where results will be saved. Defaults to "results".
+            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
+            iter_save (int, optional): The number of iterations after which to save results.
+                Defaults to 1000.
+        """
+        super().__init__(
+            meas,
+            meas_op if meas_op_approx is None else meas_op_approx,
+            meas_op,
+            prox_op,
+            im_max_itr=im_max_itr,
+            save_pth=save_pth,
+            file_prefix=file_prefix,
+            ch_start=ch_start,
+        )
+
+        self._im_min_itr = im_min_itr
+        self._im_var_tol = im_var_tol
+        self._im_peak_est = im_peak_est
+        if self._im_peak_est is not None:
+            self._im_peak_est = self._im_peak_est.to(
+                device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
+            )
+        self._heu_noise_scale = heu_noise_scale
+
+        # network adaptation parameters
+        self._adapt_net_select = adapt_net_select
+        self._peak_tol_min = peak_tol_min
+        self._peak_tol = peak_tol_max
+        self._peak_tol_step = peak_tol_step
+        self._peak_val_range = []
+
+        # spectral index map update parameters
+        self._spec_update = spec_update
+        self._ch_freq = ch_freq.to(
+            device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
+        ).view(1, -1, 1, 1)
+        self._spec_max_update_count = spec_max_update_count
+        self._spec_max_update_interval = spec_max_update_interval
+        self._spec_update_tol = spec_update_tol_max
+        self._spec_update_tol_min = spec_update_tol_min
+        self._spec_update_tol_step = spec_update_tol_step
+        self._spec_update_count = 0
+        self._spec_update_iter = 0
+        self._clean_beam = None
+
+        self._verbose = verbose
+        self._iter_save = iter_save
+
+        self._prev_peak_val = 1.0
+        self._heuristic = 1.0
+        self._im_rel_var = 1.0
+
+    @torch.no_grad()
+    def initialisation(self) -> None:
+        """
+        Initialises specific parameters of AIRI.
+
+        This method initialises the step size, estimates the peak value, sets the
+        heuristic noise level, initialises the AIRI proximal operator, and prints
+        some information if verbose is True.
+        """
+        if self._is_distributed:
+            dist.barrier()
+
+        # step size
+        self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
+
+        # estimate peak value
+        if self._im_peak_est is None:
+            self._prev_peak_val = (
+                self._meas_bp.amax(dim=(2, 3), keepdim=True) / self._psf_peak
+            )
+            if self._verbose:
+                if self._rank == 0:
+                    print("\nINFO: use normalised dirty peak as estimated", flush=True)
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"estimated image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
+        else:
+            self._prev_peak_val = self._im_peak_est
+            if self._verbose:
+                if self._rank == 0:
+                    print(
+                        "INFO: user specified the estimated image peak value",
+                        flush=True,
+                    )
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
+
+        # heuristic noise level of each channel
+        self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op_precise.get_op_norm_ch())
+        if self._verbose:
+            if self._is_distributed:
+                dist.barrier()
+            print(
+                f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                f"op norm {self._meas_op_precise.get_op_norm_ch().squeeze().cpu().tolist()}, "
+                f"heuristic noise level {self._heuristic.squeeze().cpu().tolist()}",
+                flush=True,
+            )
+
+        heu_corr_factor = torch.sqrt(
+            self._meas_op_precise.get_op_norm_ch_prime()
+            / self._meas_op_precise.get_op_norm_ch()
+        )
+        if not torch.allclose(
+            heu_corr_factor, torch.tensor(1.0, device=heu_corr_factor.device)
+        ):
+            self._heuristic *= heu_corr_factor
+            if self._verbose:
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"heuristic noise level after correction: {self._heuristic.squeeze().cpu().tolist()}, "
+                    f"correction factor {heu_corr_factor.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
+        if not np.isclose(self._heu_noise_scale, 1.0):
+            self._heuristic *= self._heu_noise_scale
+            if self._verbose:
+                if self._is_distributed:
+                    dist.barrier()
+                if self._rank == 0:
+                    print(
+                        f"INFO: apply user specified heuristic noise scale {self._heu_noise_scale}",
+                        flush=True,
+                    )
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"heuristic noise level after scaling: {self._heuristic.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
+
+        # initialise HyperAIRI prox
+        self._peak_val_range = self._prox_op.update(
+            ch_heuristic=self._heuristic,
+            ch_peak_est=self._prev_peak_val,
+            spec_idx=torch.ones(1).to(
+                device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
+            ),
+        )
+
+        # spectral index map update is enabled
+        if self._spec_update:
+            # generate clean beam
+            if self._rank == self._world_size - 1:
+                psf_ch_end = self._psf[0, -1, :, :].cpu().numpy()
+                self._clean_beam = fit_clean_beam(psf_ch_end, verbose=self._verbose)
+                self._clean_beam = torch.tensor(
+                    self._clean_beam,
+                    device=self._meas_op.get_device(),
+                    dtype=self._meas_op.get_data_type(),
+                ).reshape(1, 1, *self._clean_beam.shape)
+            if self._is_distributed:
+                if self._rank == self._world_size - 1:
+                    clean_beam_shape = torch.tensor(
+                        self._clean_beam.shape,
+                        device=self._meas_op.get_device(),
+                        dtype=torch.int,
+                    )
+                else:
+                    clean_beam_shape = torch.zeros(
+                        4,
+                        device=self._meas_op.get_device(),
+                        dtype=torch.int,
+                    )
+                dist.broadcast(clean_beam_shape, src=self._world_size - 1)
+                if self._rank < self._world_size - 1:
+                    self._clean_beam = torch.zeros(
+                        *clean_beam_shape.cpu().tolist(),
+                        device=self._meas_op.get_device(),
+                        dtype=self._meas_op.get_data_type(),
+                    )
+                dist.broadcast(self._clean_beam, src=self._world_size - 1)
+
+            # get the precision threshold for spectral index map fitting
+            self._spec_idx_prec = self._heuristic.min()
+            if self._is_distributed:
+                dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+
+        if self._verbose:
+            if self._is_distributed:
+                dist.barrier()
+            if self._rank == 0:
+                print(
+                    f"INFO: forward-backward step size: {self._gd_step_size}",
+                    flush=True,
+                )
+                if isinstance(self._meas_op, MeasOpPSF):
+                    print(
+                        "INFO: use approximate measurement operator for reconstruction",
+                        flush=True,
+                    )
+                print("\n*************************************************", flush=True)
+                print("********* STARTING ALGORITHM: HyperAIRI *********", flush=True)
+                print("*************************************************", flush=True)
+
+    def _each_iter_begin(self):
+        """
+        Method to be executed at the beginning of each iteration.
+
+        This method is empty for AIRI.
+        """
+
+    @torch.no_grad()
+    def _stop_criteria(self) -> bool:
+        """
+        Checks the stop criteria for the algorithm.
+
+        This method calculates the image relative variation, logs some information if
+        `verbose` is True, and checks if the stop criteria for the algorithm are met.
+
+        Returns:
+            bool: True if the stop criteria are met, False otherwise.
+        """
+        # img relative variation
+        model_norm = torch.linalg.vector_norm(self._model) ** 2
+        model_diff_norm = torch.linalg.vector_norm(self._model - self._model_prev) ** 2
+        # gather norms from all ranks
+        if self._is_distributed:
+            dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
+            dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
+        self._im_rel_var = (model_diff_norm / (model_norm + 1e-10)).item()
+
+        # log
+        if self._verbose and self._rank == 0:
+            print(
+                f"\nIter {self._iter+1}: relative variation {self._im_rel_var}",
+                f"\ntimings: gradient step {self._t_forward} sec,",
+                f"denoising step {self._t_backward} sec,"
+                f"iteration {self._t_iter} sec.",
+                flush=True,
+            )
+
+        # stop criteria
+        if self._iter + 1 >= self._im_min_itr and self._im_rel_var < self._im_var_tol:
+            return True
+
+        return False
+
+    @torch.no_grad()
+    def _each_iter_end(self) -> None:
+        """
+        Method to be executed at the end of each iteration.
+
+        This method saves intermediate results, and updates the HyperAIRI denoiser selection
+        if `adapt_net_select` is True.
+        """
+        # save intermediate results
+        if (self._iter + 1) % self._iter_save == 0:
+            fits.writeto(
+                os.path.join(
+                    self._save_pth,
+                    self._file_prefix
+                    + "tmp_model_itr_"
+                    + str(self._iter + 1)
+                    + ".fits",
+                ),
+                self.get_model_image(dtype=torch.float32),
+                overwrite=True,
+            )
+            fits.writeto(
+                os.path.join(
+                    self._save_pth,
+                    self._file_prefix
+                    + "tmp_residual_itr_"
+                    + str(self._iter + 1)
+                    + ".fits",
+                ),
+                self.get_residual_image(dtype=torch.float32) / self._psf_peak,
+                overwrite=True,
+            )
+
+        # HyperAIRI denoiser selection update
+        if self._adapt_net_select:
+            curr_peak_val = self._model.amax(dim=(2, 3), keepdim=True)
+            peak_var = (
+                torch.abs(curr_peak_val - self._prev_peak_val) / self._prev_peak_val
+            )
+            peak_var_max = peak_var.max()
+            if self._is_distributed:
+                dist.all_reduce(peak_var_max, op=dist.ReduceOp.MAX)
+            peak_var_max = peak_var_max.item()
+            if self._verbose:
+                if self._rank == 0:
+                    curr_peak_val_ch_1 = curr_peak_val[0, 0, 0, 0]
+                    curr_peak_val_ch_end = curr_peak_val[0, -1, 0, 0].clone()
+                    if self._world_size > 1:
+                        dist.recv(curr_peak_val_ch_end, src=self._world_size - 1)
+                    print(
+                        f"  Model image peak value: ch 1 {curr_peak_val_ch_1:.3f}, "
+                        f"ch end {curr_peak_val_ch_end.item():.3f}, "
+                        f"max relative variation = {peak_var_max.item():.3e}",
+                        flush=True,
+                    )
+                elif self._world_size > 1:
+                    curr_peak_val_ch_end = curr_peak_val[0, -1, 0, 0]
+                    dist.send(curr_peak_val_ch_end, dst=0)
+
+            peak_out_of_range = torch.logical_or(
+                curr_peak_val < self._peak_val_range[0],
+                curr_peak_val > self._peak_val_range[1],
+            )
+
+            self._prev_peak_val = curr_peak_val
+            if peak_var_max < self._peak_tol and torch.any(peak_out_of_range):
+                self._peak_tol = max(
+                    self._peak_tol * self._peak_tol_step, self._peak_tol_min
+                )
+                self._peak_val_range = self._prox_op.update(
+                    ch_heuristic=self._heuristic,
+                    ch_peak_est=self._prev_peak_val,
+                )
+
+        # spectral index map update
+        if self._spec_update:
+            if (
+                self._im_rel_var < self._spec_update_tol
+                or self._spec_update_iter >= self._spec_max_update_interval
+            ):
+                self._spec_update_iter = 0
+                self._spec_update_count += 1
+                flag_spec_update = True
+                self._spec_update_tol = max(
+                    self._spec_update_tol * self._spec_update_tol_step,
+                    self._spec_update_tol_min,
+                )
+                spec_idx_map = self._update_spec_idx_map()
+                _ = self._prox_op.update(spec_idx_map=spec_idx_map)
+            else:
+                self._spec_update_iter += 1
+
+            if self._spec_update_count >= self._spec_max_update_count:
+                self._spec_update = False  # stop further updates if interval exceeded
+
+    @torch.no_grad()
+    def finalisation(self) -> None:
+        """
+        Finalises the FBAIRI optimiser.
+
+        This method prints final log information if `verbose` is True, and saves
+        the result model and residual images.
+        """
+        if self._verbose:
+            print("\n**************************************", flush=True)
+            print("********** END OF ALGORITHM **********", flush=True)
+            print("**************************************\n", flush=True)
+            print(
+                f"Imaging finished in {self._t_total} sec,",
+                f"total number of iterations {self._iter+1}",
+                flush=True,
+            )
+
+        # save final results
+        fits.writeto(
+            os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
+            self.get_model_image(),
+            overwrite=True,
+        )
+        fits.writeto(
+            os.path.join(
+                self._save_pth, self._file_prefix + "residual_dirty_image.fits"
+            ),
+            self.get_residual_image(),
+            overwrite=True,
+        )
+        fits.writeto(
+            os.path.join(
+                self._save_pth,
+                self._file_prefix + "normalised_residual_dirty_image.fits",
+            ),
+            self.get_residual_image() / self._psf_peak,
+            overwrite=True,
+        )
+
+    @torch.no_grad()
+    def _update_spec_idx_map(self) -> torch.Tensor:
+        """
+        Updates the spectral index map based on the current model image.
+        Returns:
+            torch.Tensor: The updated spectral index map.
+        """
+        # convolve with clean beam
+        img_blur = self._model.view(self._num_ch_rank, 1, *self._model.shape[2:])
+        img_blur = torch.nn.functional.conv2d(
+            img_blur, self._clean_beam, padding="same"
+        )
+        img_blur = img_blur.view(1, self._num_ch_rank, *self._model.shape[2:])
+        img_blur = torch.clamp(img_blur, min=0.0)
+
+        # build valid mask
+        img_blur_valid_count = torch.sum(
+            (img_blur > self._spec_idx_prec).to(torch.float32), dim=1, keepdim=True
+        )
+        if self._is_distributed:
+            dist.all_reduce(img_blur_valid_count, op=dist.ReduceOp.SUM)
+        img_blur_valid_mask = img_blur_valid_count > self._ch_freq.shape[1] * 0.5
+
+        # log frequency, x
+        prec_mask = img_blur < self._spec_idx_prec
+        log_ch_freq = torch.log(
+            self._ch_freq[:, self._ch_start : self._ch_start + self._num_ch_rank, :, :]
+        )
+        log_ch_freq = log_ch_freq.expand_as(img_blur)
+        log_ch_freq.masked_fill_(prec_mask, 0.0)
+        # log blurred image, y
+        log_img_blur = torch.log(torch.clamp(img_blur, min=self._spec_idx_prec))
+        log_img_blur.masked_fill_(prec_mask, 0.0)
+
+        # least squares fitting y = a * x + b
+        # a=\frac{n\sum_i x_i y_i - (\sum_i x_i)(\sum_i y_i)}{n\sum_i x_i^2-(\sum_i x_i)^2}
+        sum_x = torch.sum(log_ch_freq, dim=1, keepdim=True)
+        sum_y = torch.sum(log_img_blur, dim=1, keepdim=True)
+        sum_xy = torch.sum(log_ch_freq * log_img_blur, dim=1, keepdim=True)
+        sum_x2 = torch.sum(log_ch_freq**2, dim=1, keepdim=True)
+        if self._is_distributed:
+            dist.all_reduce(sum_x, op=dist.ReduceOp.SUM)
+            dist.all_reduce(sum_y, op=dist.ReduceOp.SUM)
+            dist.all_reduce(sum_xy, op=dist.ReduceOp.SUM)
+            dist.all_reduce(sum_x2, op=dist.ReduceOp.SUM)
+        numerator = img_blur_valid_count * sum_xy - sum_x * sum_y
+        denominator = img_blur_valid_count * sum_x2 - sum_x**2
+        img_blur_valid_mask = torch.logical_and(img_blur_valid_mask, denominator > 1e-8)
+        spec_idx_map = torch.where(
+            img_blur_valid_mask,
+            numerator / torch.clamp(denominator, min=1e-8),
+            torch.zeros_like(numerator),
+        )
+        spec_idx_map.masked_fill_(spec_idx_map > -1e-8, 0.0)
+
+        # post processing
+        img_blur_avg = torch.sum(img_blur, dim=1, keepdim=True)
+        if self._is_distributed:
+            dist.all_reduce(img_blur_avg, op=dist.ReduceOp.SUM)
+        img_blur_avg = img_blur_avg / self._ch_freq.shape[1]
+
+        img_blur_avg.masked_fill_(img_blur_avg < self._spec_idx_prec, 0.0)
+        mask_alpha_0 = (spec_idx_map == 0).expand_as(self._model)
+        self._model = torch.where(
+            mask_alpha_0, img_blur_avg.expand_as(self._model), self._model
+        )
+
+        mask_alpha_neg = (spec_idx_map < 0).expand_as(self._model)
+        low_val_mask = torch.logical_and(
+            mask_alpha_neg, self._model < self._heuristic.view(1, -1, 1, 1)
+        )
+        low_val_mask = torch.logical_and(low_val_mask, self._model < img_blur)
+        self._model = torch.where(low_val_mask, img_blur, self._model)
+
+        return spec_idx_map

@@ -1,10 +1,12 @@
 """
 Forward-backward algorithm
 """
+
 import os
 from typing import Union
 from timeit import default_timer as timer
 import torch
+import torch.distributed as dist
 import numpy as np
 from astropy.io import fits
 
@@ -30,6 +32,7 @@ class ForwardBackward(Optimiser):
         im_max_itr: int = 2000,
         save_pth: str = "results",
         file_prefix: str = "",
+        ch_start: int = 0,
     ) -> None:
         """
         Initializes the ForwardBackward optimiser.
@@ -42,8 +45,11 @@ class ForwardBackward(Optimiser):
             im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
             save_pth (str, optional): The path where results will be saved. Defaults to "results".
             file_prefix (str, optional): The prefix of the saving files. Defaults to None.
+            ch_start (int, optional): The starting channel index. Defaults to 0.
         """
-        super().__init__(meas, meas_op, save_pth=save_pth, file_prefix=file_prefix)
+        super().__init__(
+            meas, meas_op, save_pth=save_pth, file_prefix=file_prefix, ch_start=ch_start
+        )
         self._meas_op_precise = meas_op_precise
         self._prox_op = prox_op
         self._start_iter = 0
@@ -71,17 +77,19 @@ class ForwardBackward(Optimiser):
             self._meas_op_precise.get_device()
         )
         self._psf = self._meas_op_precise.get_psf()
-        self._psf_peak = self._psf.max().item()
-        fits.writeto(
-            os.path.join(self._save_pth, "dirty.fits"),
-            self.get_dirty_image() / self._psf_peak,
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(self._save_pth, "psf.fits"),
-            self.get_psf(),
-            overwrite=True,
-        )
+        self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
+
+        if self._rank == 0:
+            fits.writeto(
+                os.path.join(self._save_pth, "dirty.fits"),
+                self.get_dirty_image(normalise=self._psf_peak, dest=0),
+                overwrite=True,
+            )
+            fits.writeto(
+                os.path.join(self._save_pth, "psf.fits"),
+                self.get_psf(dest=0),
+                overwrite=True,
+            )
 
     @torch.no_grad()
     def run(self) -> None:
@@ -92,22 +100,25 @@ class ForwardBackward(Optimiser):
         in a loop until the stop criteria is met.
         """
         # timing with cuda events
-        if self._forward_cuda_timing:
+        if self._forward_cuda_timing and self._rank == 0:
             forward_start_event = torch.cuda.Event(enable_timing=True)
             forward_end_event = torch.cuda.Event(enable_timing=True)
-        if self._backward_cuda_timing:
+        if self._backward_cuda_timing and self._rank == 0:
             backward_start_event = torch.cuda.Event(enable_timing=True)
             backward_end_event = torch.cuda.Event(enable_timing=True)
-            torch.cuda.synchronize()
 
         self._t_total = timer()
         for self._iter in range(self._start_iter, self._im_max_itr):
+            if self._is_distributed:
+                dist.barrier()
+
             self._t_iter = timer()
             self._each_iter_begin()
 
             # forward step
             if self._forward_cuda_timing:
-                forward_start_event.record()
+                if self._rank == 0:
+                    forward_start_event.record()
             else:
                 self._t_forward = timer()
             x_hat = self._model - self._gd_step_size * (
@@ -117,26 +128,41 @@ class ForwardBackward(Optimiser):
             x_hat = x_hat.to(
                 device=self._prox_op.get_device(), dtype=self._prox_op.get_data_type()
             )
+
+            if self._is_distributed:
+                dist.barrier()
+
             if self._forward_cuda_timing:
-                forward_end_event.record()
-                torch.cuda.synchronize()
-                self._t_forward = forward_start_event.elapsed_time(forward_end_event) / 1e3
+                if self._rank == 0:
+                    forward_end_event.record()
+                    forward_end_event.synchronize()
+                    self._t_forward = (
+                        forward_start_event.elapsed_time(forward_end_event) / 1e3
+                    )
             else:
                 self._t_forward = timer() - self._t_forward
 
             # backward step
             if self._backward_cuda_timing:
-                backward_start_event.record()
+                if self._rank == 0:
+                    backward_start_event.record()
             else:
                 self._t_backward = timer()
             self._model = self._prox_op(x_hat)
             self._model = self._model.to(device=self._meas_op.get_device()).to(
                 dtype=self._meas_op.get_data_type()
             )
+
+            if self._is_distributed:
+                dist.barrier()
+
             if self._backward_cuda_timing:
-                backward_end_event.record()
-                torch.cuda.synchronize()
-                self._t_backward = backward_start_event.elapsed_time(backward_end_event) / 1e3
+                if self._rank == 0:
+                    backward_end_event.record()
+                    backward_end_event.synchronize()
+                    self._t_backward = (
+                        backward_start_event.elapsed_time(backward_end_event) / 1e3
+                    )
             else:
                 self._t_backward = timer() - self._t_backward
             self._t_iter = timer() - self._t_iter
@@ -149,26 +175,3 @@ class ForwardBackward(Optimiser):
             self._model_prev = self._model
 
         self._t_total = timer() - self._t_total
-
-    def get_residual_image(self, dtype=torch.double) -> np.ndarray:
-        """
-        Get the residual image. Always use the precise measurement operator.
-
-        args:
-            dtype (torch.dtype): The data type of the output residual image.
-
-        Returns:
-            np.ndarray: The residual image.
-        """
-        return (
-            (
-                self._meas_bp
-                - self._meas_op_precise.adjoint_op(
-                    self._meas_op_precise.forward_op(self._model)
-                )
-            )
-            .squeeze()
-            .cpu()
-            .to(dtype)
-            .numpy()
-        )

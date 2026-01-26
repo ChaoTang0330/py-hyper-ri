@@ -5,6 +5,7 @@ Base class for optimisers
 from abc import ABC, abstractmethod
 from typing import Any
 import torch
+import torch.distributed as dist
 import numpy as np
 
 from ..ri_measurement_operator.pysrc.measOperator import MeasOp
@@ -24,6 +25,7 @@ class Optimiser(ABC):
         meas_op: MeasOp,
         save_pth: str = "results",
         file_prefix: str = "",
+        ch_start: int = 0,
     ) -> None:
         """
         General initialization of the Optimiser.
@@ -40,11 +42,13 @@ class Optimiser(ABC):
         self._meas = meas.to(self._meas_op.get_data_type_meas())
         self._save_pth = save_pth
         self._file_prefix = file_prefix
+        self._num_ch_rank = self._meas.shape[1]
+        self._ch_start = ch_start
 
         # common initialisation
         self._meas_bp = torch.zeros(
             1,
-            1,
+            self._num_ch_rank,
             *self._meas_op.get_img_size(),
             device=self._meas_op.get_device(),
             dtype=self._meas_op.get_data_type()
@@ -52,6 +56,29 @@ class Optimiser(ABC):
         self._model = torch.zeros_like(self._meas_bp)
         self._model_prev = torch.zeros_like(self._meas_bp)
         self._psf = torch.zeros_like(self._meas_bp)
+
+        # init distributed
+        self._is_distributed = dist.is_available() and dist.is_initialized()
+        self._rank = dist.get_rank() if self._is_distributed else 0
+        self._world_size = dist.get_world_size() if self._is_distributed else 1
+        self._num_ch_each_rank = (self._num_ch_rank,)
+        if self._is_distributed:
+            num_ch_each_rank_tensor = torch.zeros(
+                self._world_size,
+                dtype=torch.int64,
+                device=self._meas_op.get_device(),
+            )
+            dist.all_gather_into_tensor(
+                num_ch_each_rank_tensor,
+                torch.tensor(
+                    [self._num_ch_rank],
+                    dtype=torch.int64,
+                    device=self._meas_op.get_device(),
+                ),
+            )
+            self._num_ch_each_rank = tuple(
+                num_ch_each_rank_tensor.cpu().numpy().tolist()
+            )
 
     @abstractmethod
     def initialisation(self) -> Any:
@@ -115,59 +142,132 @@ class Optimiser(ABC):
         """
         return NotImplemented
 
-    def get_model_image(self, dtype=torch.double) -> np.ndarray:
+    def get_model_image(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
         """
         Get the final model image.
 
         args:
             dtype (torch.dtype): The data type of the output model image.
+            dest (int): Destination rank to gather tensors.
 
         Returns:
             np.ndarray: The final model.
         """
-        return self._model.squeeze().cpu().to(dtype).numpy()
+        model_full = self._gather_ch_img_to_tensor(
+            self._model,
+            dest=dest,
+        )
+        if self._rank != dest and self._world_size > 1:
+            return None
+        return model_full.squeeze().cpu().to(dtype).numpy()
 
-    def get_psf(self, dtype=torch.double) -> np.ndarray:
+    def get_psf(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
         """
         Get the PSF.
 
         args:
             dtype (torch.dtype): The data type of the output PSF.
-
+            dest (int): Destination rank to gather tensors.
         Returns:
             np.ndarray: The PSF.
         """
-        return self._psf.squeeze().cpu().to(dtype).numpy()
+        psf_full = self._gather_ch_img_to_tensor(
+            self._psf,
+            dest=dest,
+        )
+        if self._rank != dest and self._world_size > 1:
+            return None
+        return psf_full.squeeze().cpu().to(dtype).numpy()
 
-    def get_dirty_image(self, dtype=torch.double) -> np.ndarray:
+    def get_dirty_image(
+        self, normalise=None, dtype=torch.double, dest: int = 0
+    ) -> np.ndarray:
         """
         Get the dirty image.
 
         args:
             dtype (torch.dtype): The data type of the output dirty image.
+            dest (int): Destination rank to gather tensors.
 
         Returns:
             np.ndarray: The dirty image.
         """
-        return self._meas_bp.squeeze().cpu().to(dtype).numpy()
+        dirty_full = self._gather_ch_img_to_tensor(
+            self._meas_bp / (normalise if normalise is not None else 1.0),
+            dest=dest,
+        )
+        if self._rank != dest and self._world_size > 1:
+            return None
+        return dirty_full.squeeze().cpu().to(dtype).numpy()
 
-    def get_residual_image(self, dtype=torch.double) -> np.ndarray:
+    def get_residual_image(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
         """
         Get the residual image.
 
         args:
             dtype (torch.dtype): The data type of the output residual image.
+            dest (int): Destination rank to gather tensors.
 
         Returns:
             np.ndarray: The residual image.
         """
-        return (
-            (
-                self._meas_bp
-                - self._meas_op.adjoint_op(self._meas_op.forward_op(self._model))
-            )
-            .squeeze()
-            .cpu()
-            .to(dtype)
-            .numpy()
+        residual_rank = self._meas_bp - self._meas_op.adjoint_op(
+            self._meas_op.forward_op(self._model)
         )
+        residual_full = self._gather_ch_img_to_tensor(
+            residual_rank,
+            dest=dest,
+        )
+        if self._rank != dest and self._world_size > 1:
+            return None
+        return residual_full.squeeze().cpu().to(dtype).numpy()
+
+    def _gather_ch_img_to_tensor(
+        self,
+        tensor_ch_rank: torch.Tensor,
+        dest: int = 0,
+    ) -> torch.Tensor:
+        """
+        Gather tensors have different number of channels from all ranks to the tensor at destination rank.
+        Args:
+            tensor_ch_rank (torch.Tensor): Tensor on each rank with shape (1, num_ch_rank, H, W).
+        Returns:
+            torch.Tensor: Gathered tensor on the destination rank with shape (1, total_num_ch, H, W)
+                at the destination rank, None on other ranks.
+        """
+        if self._world_size <= 1:
+            return tensor_ch_rank
+
+        max_num_ch = max(self._num_ch_each_rank)
+        if tensor_ch_rank.shape[1] < max_num_ch:
+            tensor_pad = torch.cat(
+                [
+                    tensor_ch_rank,
+                    tensor_ch_rank.new_zeros(
+                        1,
+                        max_num_ch - tensor_ch_rank.shape[1],
+                        tensor_ch_rank.shape[2],
+                        tensor_ch_rank.shape[3],
+                    ),
+                ],
+                dim=1,
+            )
+        else:
+            tensor_pad = tensor_ch_rank
+
+        gather_list = (
+            [torch.empty_like(tensor_pad) for _ in range(self._world_size)]
+            if self._rank == dest
+            else None
+        )
+        dist.gather(tensor_pad, gather_list=gather_list, dst=dest)
+        if self._rank != dest:
+            return None
+        tensor_full = torch.cat(
+            [
+                gather_list[r][:, : self._num_ch_each_rank[r], :, :]
+                for r in range(self._world_size)
+            ],
+            dim=1,
+        )
+        return tensor_full
