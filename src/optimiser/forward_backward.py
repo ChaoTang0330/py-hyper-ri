@@ -174,6 +174,6 @@ class ForwardBackward(Optimiser):
 
             self._each_iter_end()
 
-            self._model_prev = self._model
+            self._model_prev = self._model.clone()
 
         self._t_total = timer() - self._t_total

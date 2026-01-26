@@ -47,7 +47,7 @@ class FBHyperAIRI(ForwardBackward):
         spec_idx_init: Union[torch.Tensor, str] = "dirty",
         spec_max_update_count: int = 50,
         spec_max_update_interval: int = 60,
-        spec_update_tol_max: float = 8e-3,
+        spec_update_tol_max: float = 1.6e-3,
         spec_update_tol_min: float = 1e-5,
         spec_update_tol_step: float = 0.5,
         verbose: bool = True,

@@ -45,9 +45,10 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
             It includes parameters like 'dnn_shelf_path', 'dnn_apply_transform', 'device', 'dtype',
             and 'verbose'.
     """
+    torch.backends.cudnn.allow_tf32 = True
     torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
     torch.set_float32_matmul_precision("highest")
+    torch.backends.cudnn.benchmark = True
 
     # init torch.distributed
     # Get process info from environment variables
@@ -112,6 +113,7 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
         img_size=param_optimiser["img_size"],
         natural_weight=data["nW"],
         image_weight=data["nWimag"],
+        multi_stream=False,
         device=device,
         dtype=param_measop["dtype"],
     )
@@ -123,6 +125,7 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
         ch_freq=data["freqs"],
         shelf_path=param_proxop["dnn_shelf_path"],
         rand_trans=param_proxop["dnn_apply_transform"],
+        multi_stream=False,
         device=device,
         dtype=param_proxop["dtype"],
         verbose=param_proxop["verbose"],
