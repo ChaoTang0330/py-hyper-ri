@@ -10,15 +10,18 @@ import numpy as np
 from astropy.io import fits
 
 from .prox_operator import ProxOpHyperAIRI
-# from .optimiser import HyperAIRI
+from .optimiser import FBHyperAIRI
+
 # from .utils import gen_imaging_weight
 from .ri_measurement_operator.pysrc.utils.io_hs import load_data_to_tensor_hs
 from .ri_measurement_operator.pysrc.measOperator.meas_op_hs import MeasOpHyperspectral
-from .utils.dist import gather_ch_to_tensor
+# from .utils.dist import gather_ch_to_tensor
+
 
 def env_int(name: str, default: int) -> int:
     v = os.environ.get(name)
     return int(v) if v is not None else default
+
 
 def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> None:
     """
@@ -71,8 +74,15 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
     # Small header
     dist.barrier()
     if param_comm["rank"] == 0:
-        print(f"INFO: torch.distributed initialized with backend={dist.get_backend()}", flush=True)
-        print(f"INFO: num of processes = {param_comm['world_size']}, num of nodes = {param_comm['world_size'] // param_comm['local_world_size']}", flush=True)
+        print(
+            f"INFO: torch.distributed initialized with backend={dist.get_backend()}",
+            flush=True,
+        )
+        print(
+            f"INFO: num of processes = {param_comm['world_size']}, "
+            f"num of nodes = {param_comm['world_size'] // param_comm['local_world_size']}",
+            flush=True,
+        )
     dist.barrier()
 
     # load data
@@ -96,7 +106,6 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
     )
 
     # prepare measurement operator
-
     meas_op = MeasOpHyperspectral(
         u=data["u"],
         v=data["v"],
@@ -108,63 +117,62 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
     )
 
     # prepare prior
-    prox_op = ProxOpHyperAIRI(
+    prox_op_hyperairi = ProxOpHyperAIRI(
         rank_num_ch=len(data["y"]),
         rank_ch_start=data["rank_eff_ch_start"],
         ch_freq=data["freqs"],
         shelf_path=param_proxop["dnn_shelf_path"],
-        rand_trans=False, #param_proxop["dnn_apply_transform"],
+        rand_trans=param_proxop["dnn_apply_transform"],
         device=device,
         dtype=param_proxop["dtype"],
         verbose=param_proxop["verbose"],
     )
 
-    # test hyperairi denoiser
-    img_gdth = fits.getdata("/home/dp330/dp330/dc-tang2/Small-scale-RI-imaging-hs/data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40/groundtruth.fits").astype(np.float32)
-    img_gdth_rank = torch.tensor(img_gdth[data["rank_eff_ch_start"]:data["rank_eff_ch_start"]+len(data["y"]), :, :], device=device).unsqueeze(0)
-    img_noisy = fits.getdata("/home/dp330/dp330/dc-tang2/Small-scale-RI-imaging-hs/data/img_noisy.fits").astype(np.float32)
-    img_noisy_rank = torch.tensor(img_noisy[data["rank_eff_ch_start"]:data["rank_eff_ch_start"]+len(data["y"]), :, :], device=device).unsqueeze(0)
-    spec_idx_map = fits.getdata("/home/dp330/dp330/dc-tang2/Small-scale-RI-imaging-hs/data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40/index_map.fits").astype(np.float32)
-    spec_idx_map = torch.from_numpy(spec_idx_map).to(device).unsqueeze(0).unsqueeze(0)
-    prox_op.update(
-        list_heuristic = [1.6e-4 for _ in range(len(data["y"]))],
-        list_peak_est = [1.0 for _ in range(len(data["y"]))],
-        spec_idx = spec_idx_map,
-    )
-    img_denoised_rank = prox_op(img_noisy_rank)
-
-    # calculate SNR of the noisy and denoised images
-    gdth_norm_rank = torch.linalg.vector_norm(img_gdth_rank)**2
-    diff_norm_rank_noisy = torch.linalg.vector_norm(img_noisy_rank - img_gdth_rank)**2
-    diff_norm_rank_denoised = torch.linalg.vector_norm(img_denoised_rank - img_gdth_rank)**2
-    # gather norms from all ranks
-    dist.all_reduce(gdth_norm_rank, op=dist.ReduceOp.SUM)
-    dist.all_reduce(diff_norm_rank_noisy, op=dist.ReduceOp.SUM)
-    dist.all_reduce(diff_norm_rank_denoised, op=dist.ReduceOp.SUM)
-
-    snr_noisy = 10.0 * torch.log10(gdth_norm_rank / diff_norm_rank_noisy).item()
-    snr_denoised = 10.0 * torch.log10(gdth_norm_rank / diff_norm_rank_denoised).item()
-
-    if param_comm["rank"] == 0:
-        print(f"INFO: Noisy Image SNR: {snr_noisy:.2f} dB", flush=True)
-        print(f"INFO: Denoised Image SNR: {snr_denoised:.2f} dB", flush=True)
-
-    img_denoised_full = gather_ch_to_tensor(
-        img_denoised_rank,
-        dest=0,
-    )
-    if param_comm["rank"] == 0:
-        img_denoised_full = img_denoised_full.squeeze(0).cpu().numpy()
-        fits.writeto(
-            os.path.join(param_optimiser["result_path"], "img_denoised.fits"),
-            img_denoised_full,
-            overwrite=True,
-        )
-
     # prepare optimiser
+    optimiser = FBHyperAIRI(
+        meas=data["y"],
+        ch_freq=data["freqs"],
+        meas_op=meas_op,
+        prox_op=prox_op_hyperairi,
+        ch_start=data["rank_eff_ch_start"],
+        meas_op_approx=None,
+        im_min_itr=param_optimiser["im_min_itr"],
+        im_max_itr=param_optimiser["im_max_itr"],
+        im_var_tol=param_optimiser["im_var_tol"],
+        im_peak_est=param_optimiser["im_peak_est"],
+        heu_noise_scale=param_optimiser["heu_noise_scale"],
+        adapt_net_select=param_optimiser["dnn_adaptive_peak"],
+        peak_tol_min=param_optimiser["dnn_adaptive_peak_tol_min"],
+        peak_tol_max=param_optimiser["dnn_adaptive_peak_tol_max"],
+        peak_tol_step=param_optimiser["dnn_adaptive_peak_tol_step"],
+        save_pth=param_optimiser["result_path"],
+        file_prefix=param_optimiser["file_prefix"],
+        iter_save=param_optimiser["itr_save"],
+        verbose=param_optimiser["verbose"],
+    )
+    # left to defult values:
+    # spec_update: bool = True,
+    # spec_max_update_count: int = 20,
+    # spec_max_update_interval: int = 200,
+    # spec_update_tol_max: float = 1e-2,
+    # spec_update_tol_min: float = 1e-5,
+    # spec_update_tol_step: float = 0.5,
 
     # imaging
-    
+    if param_optimiser["flag_imaging"]:
+        # initialisation
+        optimiser.initialisation()
+        # run imaging loop
+        optimiser.run()
+        # finalisation
+        optimiser.finalisation()
+
+        dist.barrier()
+        print(
+            f"INFO: rank {param_comm['rank']}: The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
+            flush=True,
+        )
+
     # clsoing down torch.distributed
     torch.cuda.synchronize()
     dist.barrier()

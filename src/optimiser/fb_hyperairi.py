@@ -15,7 +15,7 @@ from ..ri_measurement_operator.pysrc.measOperator import MeasOpHyperspectral
 from ..ri_measurement_operator.pysrc.measOperator.meas_op_PSF import (
     MeasOpPSF,
 )
-from ..utils.spectral_index import fit_clean_beam
+from ..utils.spectral_index import fit_clean_beam, get_spec_idx
 
 
 class FBHyperAIRI(ForwardBackward):
@@ -44,9 +44,10 @@ class FBHyperAIRI(ForwardBackward):
         peak_tol_max: float = 0.1,
         peak_tol_step: float = 0.1,
         spec_update: bool = True,
-        spec_max_update_count: int = 20,
-        spec_max_update_interval: int = 200,
-        spec_update_tol_max: float = 1e-2,
+        spec_idx_init: Union[torch.Tensor, str] = "dirty",
+        spec_max_update_count: int = 50,
+        spec_max_update_interval: int = 60,
+        spec_update_tol_max: float = 8e-3,
         spec_update_tol_min: float = 1e-5,
         spec_update_tol_step: float = 0.5,
         verbose: bool = True,
@@ -74,13 +75,15 @@ class FBHyperAIRI(ForwardBackward):
             peak_tol_max (float, optional): The maximum tolerance for peak. Defaults to 0.1.
             peak_tol_step (float, optional): The step size for peak tolerance. Defaults to 0.1.
             spec_update (bool, optional): Whether to update spectral index map. Defaults to True.
+            spec_idx_init (Union[torch.Tensor, str], optional): The initialization method for spectral index map.
+                It can be 'zero', 'dirty', or a tensor. Defaults to 'zero'.
             spec_max_update_count (int, optional): The maximum number of spectral index map updates.
-                Defaults to 20.
+                Defaults to 50.
             spec_max_update_interval (int, optional): The maximum interval between spectral index map updates.
-                Defaults to 200.
-            spec_tol_max (float, optional): The maximum tolerance for spectral index map update. Defaults to 1e-1.
-            spec_tol_min (float, optional): The minimum tolerance for spectral index map update. Defaults to 1e-3.
-            spec_tol_step (float, optional): The step size for spectral index map update tolerance. Defaults to 0.5.
+                Defaults to 60.
+            spec_update_tol_max (float, optional): The maximum tolerance for spectral index map update. Defaults to 8e-3.
+            spec_update_tol_min (float, optional): The minimum tolerance for spectral index map update. Defaults to 1e-5.
+            spec_update_tol_step (float, optional): The step size for spectral index map update tolerance. Defaults to 0.5.
             verbose (bool, optional): Whether to print verbose logs. Defaults to True.
             save_pth (str, optional): The path where results will be saved. Defaults to "results".
             file_prefix (str, optional): The prefix of the saving files. Defaults to "".
@@ -115,6 +118,7 @@ class FBHyperAIRI(ForwardBackward):
         self._peak_val_range = []
 
         # spectral index map update parameters
+        self._spec_idx_init = spec_idx_init
         self._spec_update = spec_update
         self._ch_freq = ch_freq.to(
             device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
@@ -146,6 +150,8 @@ class FBHyperAIRI(ForwardBackward):
         """
         if self._is_distributed:
             dist.barrier()
+            if self._rank == 0 and self._verbose:
+                print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
 
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
@@ -194,11 +200,16 @@ class FBHyperAIRI(ForwardBackward):
             )
 
         heu_corr_factor = torch.sqrt(
-            self._meas_op_precise.get_op_norm_ch_prime()
+            self._meas_op_precise.get_op_norm_prime_ch()
             / self._meas_op_precise.get_op_norm_ch()
         )
         if not torch.allclose(
-            heu_corr_factor, torch.tensor(1.0, device=heu_corr_factor.device)
+            heu_corr_factor,
+            torch.tensor(
+                1.0,
+                device=heu_corr_factor.device,
+                dtype=heu_corr_factor.dtype,
+            ),
         ):
             self._heuristic *= heu_corr_factor
             if self._verbose:
@@ -228,53 +239,97 @@ class FBHyperAIRI(ForwardBackward):
                     flush=True,
                 )
 
+        # prepare clean beam & precision threthold for spectral index map
+        # generate clean beam
+        if self._rank == self._world_size - 1:
+            psf_ch_end = self._psf[0, -1, :, :].cpu().numpy()
+            self._clean_beam, _, _, _ = fit_clean_beam(
+                psf_ch_end, verbose=self._verbose
+            )
+            self._clean_beam = torch.tensor(
+                self._clean_beam,
+                device=self._meas_op.get_device(),
+                dtype=self._meas_op.get_data_type(),
+            ).reshape(1, 1, *self._clean_beam.shape)
+        if self._is_distributed:
+            if self._rank == self._world_size - 1:
+                clean_beam_shape = torch.tensor(
+                    self._clean_beam.shape,
+                    device=self._meas_op.get_device(),
+                    dtype=torch.int,
+                )
+            else:
+                clean_beam_shape = torch.empty(
+                    4,
+                    device=self._meas_op.get_device(),
+                    dtype=torch.int,
+                )
+            dist.broadcast(clean_beam_shape, src=self._world_size - 1)
+            if self._rank < self._world_size - 1:
+                self._clean_beam = torch.empty(
+                    *clean_beam_shape.cpu().tolist(),
+                    device=self._meas_op.get_device(),
+                    dtype=self._meas_op.get_data_type(),
+                )
+            dist.broadcast(self._clean_beam, src=self._world_size - 1)
+
+        # get the precision threshold for spectral index map fitting
+        self._spec_idx_prec = self._heuristic.min()
+        if self._is_distributed:
+            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+        self._spec_idx_prec = self._spec_idx_prec.item()
+
+        # calculate init spectral index map
+        if isinstance(self._spec_idx_init, torch.Tensor):
+            self._spec_idx_map = self._spec_idx_init.to(
+                device=self._meas_op.get_device(),
+                dtype=self._meas_op.get_data_type(),
+            ).reshape(1, -1, 1, 1)
+        elif self._spec_idx_init == "dirty":
+            dirty_normalised_np = self.get_dirty_image(normalise=self._psf_peak, dest=0)
+            if self._rank == 0:
+                self._spec_idx_map = get_spec_idx(
+                    img_cube=dirty_normalised_np,
+                    freqs=self._ch_freq.cpu().numpy().squeeze(),
+                    kernel=self._clean_beam.cpu().numpy().squeeze(),
+                    threshold=self._spec_idx_prec,
+                )
+                self._spec_idx_map = np.nan_to_num(
+                    self._spec_idx_map, nan=0.0, posinf=0.0, neginf=0.0
+                )
+                self._spec_idx_map = torch.tensor(
+                    self._spec_idx_map,
+                    device=self._meas_op.get_device(),
+                    dtype=self._meas_op.get_data_type(),
+                ).reshape(1, -1, *self._model.shape[2:])
+            else:
+                self._spec_idx_map = torch.empty(
+                    (1, 1, self._model.shape[2], self._model.shape[3]),
+                    device=self._meas_op.get_device(),
+                    dtype=self._meas_op.get_data_type(),
+                )
+            if self._is_distributed:
+                dist.broadcast(self._spec_idx_map, src=0)
+        else:
+            self._spec_idx_map = torch.zeros(
+                1,
+                device=self._meas_op.get_device(),
+                dtype=self._meas_op.get_data_type(),
+            )
+
         # initialise HyperAIRI prox
+        if self._verbose:
+            if self._is_distributed:
+                dist.barrier()
+            if self._rank == 0:
+                print("\nINFO: Initialising HyperAIRI proximal operator...", flush=True)
         self._peak_val_range = self._prox_op.update(
             ch_heuristic=self._heuristic,
             ch_peak_est=self._prev_peak_val,
-            spec_idx=torch.ones(1).to(
-                device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
-            ),
+            spec_idx=self._spec_idx_map,
         )
 
-        # spectral index map update is enabled
-        if self._spec_update:
-            # generate clean beam
-            if self._rank == self._world_size - 1:
-                psf_ch_end = self._psf[0, -1, :, :].cpu().numpy()
-                self._clean_beam = fit_clean_beam(psf_ch_end, verbose=self._verbose)
-                self._clean_beam = torch.tensor(
-                    self._clean_beam,
-                    device=self._meas_op.get_device(),
-                    dtype=self._meas_op.get_data_type(),
-                ).reshape(1, 1, *self._clean_beam.shape)
-            if self._is_distributed:
-                if self._rank == self._world_size - 1:
-                    clean_beam_shape = torch.tensor(
-                        self._clean_beam.shape,
-                        device=self._meas_op.get_device(),
-                        dtype=torch.int,
-                    )
-                else:
-                    clean_beam_shape = torch.zeros(
-                        4,
-                        device=self._meas_op.get_device(),
-                        dtype=torch.int,
-                    )
-                dist.broadcast(clean_beam_shape, src=self._world_size - 1)
-                if self._rank < self._world_size - 1:
-                    self._clean_beam = torch.zeros(
-                        *clean_beam_shape.cpu().tolist(),
-                        device=self._meas_op.get_device(),
-                        dtype=self._meas_op.get_data_type(),
-                    )
-                dist.broadcast(self._clean_beam, src=self._world_size - 1)
-
-            # get the precision threshold for spectral index map fitting
-            self._spec_idx_prec = self._heuristic.min()
-            if self._is_distributed:
-                dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
-
+        # logging
         if self._verbose:
             if self._is_distributed:
                 dist.barrier()
@@ -311,13 +366,13 @@ class FBHyperAIRI(ForwardBackward):
             bool: True if the stop criteria are met, False otherwise.
         """
         # img relative variation
-        model_norm = torch.linalg.vector_norm(self._model) ** 2
-        model_diff_norm = torch.linalg.vector_norm(self._model - self._model_prev) ** 2
+        model_norm = torch.sum(self._model ** 2)
+        model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
         # gather norms from all ranks
         if self._is_distributed:
             dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
             dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
-        self._im_rel_var = (model_diff_norm / (model_norm + 1e-10)).item()
+        self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
         # log
         if self._verbose and self._rank == 0:
@@ -345,28 +400,31 @@ class FBHyperAIRI(ForwardBackward):
         """
         # save intermediate results
         if (self._iter + 1) % self._iter_save == 0:
-            fits.writeto(
-                os.path.join(
-                    self._save_pth,
-                    self._file_prefix
-                    + "tmp_model_itr_"
-                    + str(self._iter + 1)
-                    + ".fits",
-                ),
-                self.get_model_image(dtype=torch.float32),
-                overwrite=True,
-            )
-            fits.writeto(
-                os.path.join(
-                    self._save_pth,
-                    self._file_prefix
-                    + "tmp_residual_itr_"
-                    + str(self._iter + 1)
-                    + ".fits",
-                ),
-                self.get_residual_image(dtype=torch.float32) / self._psf_peak,
-                overwrite=True,
-            )
+            model_full_np = self.get_model_image(dtype=torch.float32)
+            residual_full_np = self.get_residual_image(dtype=torch.float32)
+            if self._rank == 0:
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth,
+                        self._file_prefix
+                        + "tmp_model_itr_"
+                        + str(self._iter + 1)
+                        + ".fits",
+                    ),
+                    model_full_np,
+                    overwrite=True,
+                )
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth,
+                        self._file_prefix
+                        + "tmp_residual_itr_"
+                        + str(self._iter + 1)
+                        + ".fits",
+                    ),
+                    residual_full_np / self._psf_peak,
+                    overwrite=True,
+                )
 
         # HyperAIRI denoiser selection update
         if self._adapt_net_select:
@@ -379,20 +437,16 @@ class FBHyperAIRI(ForwardBackward):
                 dist.all_reduce(peak_var_max, op=dist.ReduceOp.MAX)
             peak_var_max = peak_var_max.item()
             if self._verbose:
+                curr_peak_val_full = self._gather_ch_img_to_tensor(curr_peak_val)
                 if self._rank == 0:
-                    curr_peak_val_ch_1 = curr_peak_val[0, 0, 0, 0]
-                    curr_peak_val_ch_end = curr_peak_val[0, -1, 0, 0].clone()
-                    if self._world_size > 1:
-                        dist.recv(curr_peak_val_ch_end, src=self._world_size - 1)
+                    curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
+                    curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
                     print(
                         f"  Model image peak value: ch 1 {curr_peak_val_ch_1:.3f}, "
-                        f"ch end {curr_peak_val_ch_end.item():.3f}, "
-                        f"max relative variation = {peak_var_max.item():.3e}",
+                        f"ch end {curr_peak_val_ch_end:.3f}, "
+                        f"max relative variation = {peak_var_max:.3e}",
                         flush=True,
                     )
-                elif self._world_size > 1:
-                    curr_peak_val_ch_end = curr_peak_val[0, -1, 0, 0]
-                    dist.send(curr_peak_val_ch_end, dst=0)
 
             peak_out_of_range = torch.logical_or(
                 curr_peak_val < self._peak_val_range[0],
@@ -417,13 +471,12 @@ class FBHyperAIRI(ForwardBackward):
             ):
                 self._spec_update_iter = 0
                 self._spec_update_count += 1
-                flag_spec_update = True
                 self._spec_update_tol = max(
                     self._spec_update_tol * self._spec_update_tol_step,
                     self._spec_update_tol_min,
                 )
                 spec_idx_map = self._update_spec_idx_map()
-                _ = self._prox_op.update(spec_idx_map=spec_idx_map)
+                _ = self._prox_op.update(spec_idx=spec_idx_map)
             else:
                 self._spec_update_iter += 1
 
@@ -438,7 +491,10 @@ class FBHyperAIRI(ForwardBackward):
         This method prints final log information if `verbose` is True, and saves
         the result model and residual images.
         """
-        if self._verbose:
+        if self._is_distributed:
+            dist.barrier()
+        torch.cuda.synchronize()
+        if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
@@ -449,26 +505,33 @@ class FBHyperAIRI(ForwardBackward):
             )
 
         # save final results
-        fits.writeto(
-            os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
-            self.get_model_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth, self._file_prefix + "residual_dirty_image.fits"
-            ),
-            self.get_residual_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth,
-                self._file_prefix + "normalised_residual_dirty_image.fits",
-            ),
-            self.get_residual_image() / self._psf_peak,
-            overwrite=True,
-        )
+        model_full_np = self.get_model_image()
+        residual_full_np = self.get_residual_image()
+        if self._rank == 0:
+            fits.writeto(
+                os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
+                model_full_np,
+                overwrite=True,
+            )
+            fits.writeto(
+                os.path.join(
+                    self._save_pth, self._file_prefix + "residual_dirty_image.fits"
+                ),
+                residual_full_np,
+                overwrite=True,
+            )
+            result_spec_idx = get_spec_idx(
+                model_full_np,
+                self._ch_freq.cpu().numpy().squeeze(),
+                threshold=self._spec_idx_prec,
+            )
+            fits.writeto(
+                os.path.join(
+                    self._save_pth, self._file_prefix + "spectral_index_map.fits"
+                ),
+                result_spec_idx,
+                overwrite=True,
+            )
 
     @torch.no_grad()
     def _update_spec_idx_map(self) -> torch.Tensor:
@@ -499,10 +562,10 @@ class FBHyperAIRI(ForwardBackward):
             self._ch_freq[:, self._ch_start : self._ch_start + self._num_ch_rank, :, :]
         )
         log_ch_freq = log_ch_freq.expand_as(img_blur)
-        log_ch_freq.masked_fill_(prec_mask, 0.0)
+        log_ch_freq = log_ch_freq.masked_fill(prec_mask, 0.0)
         # log blurred image, y
         log_img_blur = torch.log(torch.clamp(img_blur, min=self._spec_idx_prec))
-        log_img_blur.masked_fill_(prec_mask, 0.0)
+        log_img_blur = log_img_blur.masked_fill(prec_mask, 0.0)
 
         # least squares fitting y = a * x + b
         # a=\frac{n\sum_i x_i y_i - (\sum_i x_i)(\sum_i y_i)}{n\sum_i x_i^2-(\sum_i x_i)^2}
@@ -523,7 +586,7 @@ class FBHyperAIRI(ForwardBackward):
             numerator / torch.clamp(denominator, min=1e-8),
             torch.zeros_like(numerator),
         )
-        spec_idx_map.masked_fill_(spec_idx_map > -1e-8, 0.0)
+        spec_idx_map = spec_idx_map.masked_fill(spec_idx_map > -1e-8, 0.0)
 
         # post processing
         img_blur_avg = torch.sum(img_blur, dim=1, keepdim=True)
@@ -531,7 +594,7 @@ class FBHyperAIRI(ForwardBackward):
             dist.all_reduce(img_blur_avg, op=dist.ReduceOp.SUM)
         img_blur_avg = img_blur_avg / self._ch_freq.shape[1]
 
-        img_blur_avg.masked_fill_(img_blur_avg < self._spec_idx_prec, 0.0)
+        img_blur_avg = img_blur_avg.masked_fill(img_blur_avg < self._spec_idx_prec, 0.0)
         mask_alpha_0 = (spec_idx_map == 0).expand_as(self._model)
         self._model = torch.where(
             mask_alpha_0, img_blur_avg.expand_as(self._model), self._model

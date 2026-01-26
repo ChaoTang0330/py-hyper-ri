@@ -79,15 +79,17 @@ class ForwardBackward(Optimiser):
         self._psf = self._meas_op_precise.get_psf()
         self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
 
+        dirty_image_np = self.get_dirty_image(normalise=self._psf_peak, dest=0)
+        psf_np = self.get_psf(dest=0)
         if self._rank == 0:
             fits.writeto(
                 os.path.join(self._save_pth, "dirty.fits"),
-                self.get_dirty_image(normalise=self._psf_peak, dest=0),
+                dirty_image_np,
                 overwrite=True,
             )
             fits.writeto(
                 os.path.join(self._save_pth, "psf.fits"),
-                self.get_psf(dest=0),
+                psf_np,
                 overwrite=True,
             )
 
@@ -135,7 +137,7 @@ class ForwardBackward(Optimiser):
             if self._forward_cuda_timing:
                 if self._rank == 0:
                     forward_end_event.record()
-                    forward_end_event.synchronize()
+                    torch.cuda.synchronize()
                     self._t_forward = (
                         forward_start_event.elapsed_time(forward_end_event) / 1e3
                     )
@@ -159,7 +161,7 @@ class ForwardBackward(Optimiser):
             if self._backward_cuda_timing:
                 if self._rank == 0:
                     backward_end_event.record()
-                    backward_end_event.synchronize()
+                    torch.cuda.synchronize()
                     self._t_backward = (
                         backward_start_event.elapsed_time(backward_end_event) / 1e3
                     )

@@ -71,6 +71,9 @@ def fit_clean_beam(psf, verbose=True):
     sigma_x_fit, sigma_y_fit, theta_fit = popt
     # Normalize theta to [-pi, pi]
     theta_fit = (theta_fit + np.pi) % (2 * np.pi) - np.pi
+    # Because of symmetry, negative theta is equivalent to theta + pi
+    if theta_fit < 0:
+        theta_fit = theta_fit + np.pi
     if verbose:
         print(
             "INFO: Clean beam fitted with",
@@ -93,7 +96,7 @@ def fit_clean_beam(psf, verbose=True):
     return kernel, sigma_x_fit, sigma_y_fit, theta_fit
 
 
-def get_spec_idx(img_cube, kernel, freqs, threshold=1e-5, crop_roi=None):
+def get_spec_idx(img_cube, freqs, kernel=None, threshold=1e-5, crop_roi=None):
     # --- Crop the image cube ---
     if crop_roi is not None:
         x_start, x_end, y_start, y_end = crop_roi
@@ -101,9 +104,10 @@ def get_spec_idx(img_cube, kernel, freqs, threshold=1e-5, crop_roi=None):
 
     # --- Convolve each frequency slice with the kernel ---
     nfreqs = np.size(freqs)
-    for ch in range(nfreqs):
-        # Convolve2d returns an array of the same shape with mode='same'
-        img_cube[ch, :, :] = convolve2d(img_cube[ch, :, :], kernel, mode="same")
+    if kernel is not None:
+        for ch in range(nfreqs):
+            # Convolve2d returns an array of the same shape with mode='same'
+            img_cube[ch, :, :] = convolve2d(img_cube[ch, :, :], kernel, mode="same")
 
     # --- only pixels whose minimum value over frequencies exceeds threshold ---
     prec_flag = np.min(img_cube, axis=0) > threshold

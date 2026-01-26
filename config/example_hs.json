@@ -61,9 +61,9 @@
             "denoiser_comment_2": "airi default params",
             "approx_meas_op": false,
             "im_min_itr": 100,
-            "im_max_itr": 6000,
-            "im_var_tol": 5e-5,
-            "itr_save": 2000,
+            "im_max_itr": 3000,
+            "im_var_tol": 1e-5,
+            "itr_save": 5000,
             "dnn_adaptive_peak_tol_max": 1e-1,
             "dnn_adaptive_peak_tol_min": 1e-3,
             "dnn_adaptive_peak_tol_step": 0.1

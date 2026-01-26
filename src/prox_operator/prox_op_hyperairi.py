@@ -194,25 +194,15 @@ class ProxOpHyperAIRI(ProxOp):
             heuristic (float): The heuristic noise level.
             peak_est (float): The estimated maximum intensity.
         """
-        peak_min = torch.empty_like(
-            ch_heuristic, device=self._device, dtype=self._dtype
+        peak_min = torch.empty(
+            1, self._rank_num_ch, 1 , 1, device=self._device, dtype=self._dtype
         ).flatten()
-        peak_max = torch.empty_like(
-            ch_heuristic, device=self._device, dtype=self._dtype
+        peak_max = torch.empty(
+            1, self._rank_num_ch, 1 , 1, device=self._device, dtype=self._dtype
         ).flatten()
 
         if ch_heuristic is not None and ch_peak_est is not None:
             ch_heu_peak = ch_heuristic / ch_peak_est
-            if self._verbose:
-                if self._is_dist:
-                    dist.barrier()
-                if self._rank == 0:
-                    print(
-                        "\n----- HyperAIRI Denoiser Shelf Update -----",
-                        flush=True,
-                    )
-                if self._is_dist:
-                    dist.barrier()
 
             for i in range(self._rank_num_ch):
                 sigma_s = max(
@@ -251,11 +241,6 @@ class ProxOpHyperAIRI(ProxOp):
                             flush=True,
                         )
 
-            if self._is_dist:
-                dist.barrier()
-                if self._verbose and self._rank == 0:
-                    print("-------------------------------------------", flush=True)
-
         if spec_idx is not None:
             for ch in range(
                 self._rank_ch_start, self._rank_num_ch + self._rank_ch_start
@@ -271,9 +256,6 @@ class ProxOpHyperAIRI(ProxOp):
                 )
 
             if self._verbose and self._rank == 0:
-                print("\nINFO: Update spectral correction weights.", flush=True)
-
-            if self._is_dist:
-                dist.barrier()
+                print("INFO: Update spectral correction weights.", flush=True)
 
         return (peak_min.view(1, -1, 1, 1), peak_max.view(1, -1, 1, 1))

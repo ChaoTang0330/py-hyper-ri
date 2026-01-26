@@ -39,10 +39,15 @@ class Optimiser(ABC):
             file_prefix (str, optional): The prefix of the saving files. Defaults to None.
         """
         self._meas_op = meas_op
-        self._meas = meas.to(self._meas_op.get_data_type_meas())
+        if isinstance(meas, torch.Tensor):
+            self._meas = meas.to(self._meas_op.get_data_type_meas())
+        else:
+            self._meas = tuple(
+                m.to(self._meas_op.get_data_type_meas()) for m in meas
+            )
         self._save_pth = save_pth
         self._file_prefix = file_prefix
-        self._num_ch_rank = self._meas.shape[1]
+        self._num_ch_rank = 1 if isinstance(meas, torch.Tensor) else len(meas)
         self._ch_start = ch_start
 
         # common initialisation
