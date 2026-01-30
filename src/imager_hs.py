@@ -10,6 +10,7 @@ import numpy as np
 from astropy.io import fits
 
 from .prox_operator import ProxOpHyperAIRI
+# from src.prox_operator.prox_op_hyperairi_new import ProxOpHyperAIRI
 from .optimiser import FBHyperAIRI
 
 # from .utils import gen_imaging_weight

@@ -1,5 +1,5 @@
 """
-AIRI proximity operator
+HyperAIRI proximity operator
 """
 
 import csv
@@ -119,9 +119,9 @@ class ProxOpHyperAIRI(ProxOp):
         """
         # exchange border channels with neighbouring ranks
         x_to_left = x[:, :1, :, :]
-        x_from_left = torch.empty_like(x[:, :1, :, :])
+        x_from_left = torch.empty_like(x_to_left)
         x_to_right = x[:, -1:, :, :]
-        x_from_right = torch.empty_like(x[:, -1:, :, :])
+        x_from_right = torch.empty_like(x_to_right)
 
         if self._multi_stream:
             curr_stream = torch.cuda.current_stream(device=self._device)
@@ -132,7 +132,7 @@ class ProxOpHyperAIRI(ProxOp):
         if self._rank == 0:
             x_from_left = x_to_left
         elif self._world_size > 1:
-            x_to_left = x_to_left.clone()
+            # x_to_left = x_to_left.clone()
             # communicate with left rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_left, self._rank - 1),
@@ -148,7 +148,7 @@ class ProxOpHyperAIRI(ProxOp):
         if self._rank == self._world_size - 1:
             x_from_right = x_to_right
         elif self._world_size > 1:
-            x_to_right = x_to_right.clone()
+            # x_to_right = x_to_right.clone()
             # communicate with right rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_right, self._rank + 1),
