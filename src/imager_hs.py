@@ -45,9 +45,13 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
             It includes parameters like 'dnn_shelf_path', 'dnn_apply_transform', 'device', 'dtype',
             and 'verbose'.
     """
-    torch.backends.cudnn.allow_tf32 = True
+    # torch.backends.fp32_precision = "ieee"
+    # torch.backends.cuda.matmul.fp32_precision = "ieee"
+    # torch.backends.cudnn.fp32_precision = "ieee"
+    # torch.backends.cudnn.conv.fp32_precision = "ieee"
+    # torch.backends.cudnn.rnn.fp32_precision = "ieee"
     torch.backends.cuda.matmul.allow_tf32 = False
-    torch.set_float32_matmul_precision("highest")
+    torch.backends.cudnn.allow_tf32 = False
     torch.backends.cudnn.benchmark = True
 
     # init torch.distributed
@@ -120,11 +124,13 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
 
     # prepare prior
     prox_op_hyperairi = ProxOpHyperAIRI(
+        img_size=param_optimiser["img_size"],
         rank_num_ch=len(data["y"]),
         rank_ch_start=data["rank_eff_ch_start"],
         ch_freq=data["freqs"],
         shelf_path=param_proxop["dnn_shelf_path"],
         rand_trans=param_proxop["dnn_apply_transform"],
+        compile_net=False,
         multi_stream=False,
         device=device,
         dtype=param_proxop["dtype"],

@@ -24,12 +24,14 @@ class ProxOpHyperAIRI(ProxOp):
 
     def __init__(
         self,
+        img_size: tuple,
         rank_num_ch: int,
         rank_ch_start: int,
         ch_freq: torch.Tensor,
         shelf_path: str,
         rand_trans: bool = True,
-        multi_stream: bool = True,
+        multi_stream: bool = False,
+        compile_net: bool = True,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
@@ -44,12 +46,15 @@ class ProxOpHyperAIRI(ProxOp):
             shelf_path (str): Path to the CSV file containing the denoiser shelf.
             rand_trans (bool, optional): If True, apply random transformations to the input
                 before applying denoisers. Defaults to True.
-            multi_stream (bool, optional): If True, use multiple CUDA streams for parallelism. Defaults to True.
+            multi_stream (bool, optional): If True, use multiple CUDA streams for parallelism. Defaults to False.
                 performed. Defaults to torch.device("cpu").
             dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
         super().__init__(device=device, dtype=dtype)
+
+        self._img_size = img_size
+        self._compile_net = compile_net
         self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
@@ -87,17 +92,17 @@ class ProxOpHyperAIRI(ProxOp):
         # multi strem
         self._multi_stream = multi_stream and (device.type == "cuda")
         if self._multi_stream:
-            self._streams_ch = [
-                torch.cuda.Stream(device=self._device) for _ in range(rank_num_ch)
-            ]
-            self._stream_comm_left = torch.cuda.Stream(device=self._device)
-            self._stream_comm_right = torch.cuda.Stream(device=self._device)
+            # self._streams_ch = [
+            #     torch.cuda.Stream(device=self._device) for _ in range(rank_num_ch)
+            # ]
+            self._streams_ch_left = torch.cuda.Stream(device=self._device)
+            self._streams_ch_right = torch.cuda.Stream(device=self._device)
+            self._streams_ch_mid = torch.cuda.Stream(device=self._device)
             if self._verbose and self._rank == 0:
                 print(
                     "INFO: Using multi CUDA streams in HyperAIRI denoising.",
                     flush=True,
                 )
-
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
@@ -119,38 +124,38 @@ class ProxOpHyperAIRI(ProxOp):
         if self._multi_stream:
             curr_stream = torch.cuda.current_stream(device=self._device)
 
-        # communicate with left rank
         left_rank_req = None
         right_rank_req = None
-        if self._world_size > 1:
-            if self._rank == 0:
-                x_from_left = x_to_left
-            else:
-                list_p2p_op = [
-                    dist.P2POp(dist.isend, x_to_left, self._rank - 1),
-                    dist.P2POp(dist.irecv, x_from_left, self._rank - 1),
-                ]
-                if self._multi_stream:
-                    self._stream_comm_left.wait_stream(curr_stream)
-                    with torch.cuda.stream(self._stream_comm_left):
-                        left_rank_req = dist.batch_isend_irecv(list_p2p_op)
-                else:
-                    left_rank_req = dist.batch_isend_irecv(list_p2p_op)
 
-            # communicate with right rank
-            if self._rank == self._world_size - 1:
-                x_from_right = x_to_right
+        if self._rank == 0:
+            x_from_left = x_to_left
+        elif self._world_size > 1:
+            # communicate with left rank
+            list_p2p_op = [
+                dist.P2POp(dist.isend, x_to_left, self._rank - 1),
+                dist.P2POp(dist.irecv, x_from_left, self._rank - 1),
+            ]
+            if self._multi_stream:
+                self._streams_ch_left.wait_stream(curr_stream)
+                with torch.cuda.stream(self._streams_ch_left):
+                    left_rank_req = dist.batch_isend_irecv(list_p2p_op)
             else:
-                list_p2p_op = [
-                    dist.P2POp(dist.isend, x_to_right, self._rank + 1),
-                    dist.P2POp(dist.irecv, x_from_right, self._rank + 1),
-                ]
-                if self._multi_stream:
-                    self._stream_comm_right.wait_stream(curr_stream)
-                    with torch.cuda.stream(self._stream_comm_right):
-                        right_rank_req = dist.batch_isend_irecv(list_p2p_op)
-                else:
+                left_rank_req = dist.batch_isend_irecv(list_p2p_op)
+
+        if self._rank == self._world_size - 1:
+            x_from_right = x_to_right
+        elif self._world_size > 1:
+            # communicate with right rank
+            list_p2p_op = [
+                dist.P2POp(dist.isend, x_to_right, self._rank + 1),
+                dist.P2POp(dist.irecv, x_from_right, self._rank + 1),
+            ]
+            if self._multi_stream:
+                self._streams_ch_right.wait_stream(curr_stream)
+                with torch.cuda.stream(self._streams_ch_right):
                     right_rank_req = dist.batch_isend_irecv(list_p2p_op)
+            else:
+                right_rank_req = dist.batch_isend_irecv(list_p2p_op)
 
         result = torch.empty_like(x)
 
@@ -166,42 +171,51 @@ class ProxOpHyperAIRI(ProxOp):
                     if right_rank_req is not None:
                         for req in right_rank_req:
                             req.wait()
-                    net_input = torch.cat([x[:, i - 1 : i + 1, :, :], x_from_right], dim=1)
+                    net_input = torch.cat(
+                        [x[:, i - 1 : i + 1, :, :], x_from_right], dim=1
+                    )
                 else:
                     net_input = x[:, i - 1 : i + 2, :, :]
                 result_ch = self._den_ch_single(net_input, i)
-                result[:, i : i + 1, :, :].copy_(torch.clamp(result_ch, min=0.0))
+                result[:, i : i + 1, :, :].copy_(result_ch)
         else:
-            # denoise all channels in parallel streams
-            for i in range(self._rank_num_ch):
-                self._streams_ch[i].wait_stream(curr_stream)
-                if i == 0 and self._rank > 0:
-                    self._streams_ch[i].wait_stream(self._stream_comm_left)
-                elif i == self._rank_num_ch - 1 and self._rank < self._world_size - 1:
-                    self._streams_ch[i].wait_stream(self._stream_comm_right)
-                with torch.cuda.stream(self._streams_ch[i]):
-                    # prepare input for the denoiser
-                    if i == 0:
-                        net_input = torch.cat([x_from_left, x[:, i : i + 2, :, :]], dim=1)
-                    elif i == self._rank_num_ch - 1:
-                        net_input = torch.cat([x[:, i - 1 : i + 1, :, :], x_from_right], dim=1)
-                    else:
-                        net_input = x[:, i - 1 : i + 2, :, :]
-                    result_ch = self._den_ch_single(net_input, i)
-                    result[:, i : i + 1, :, :].copy_(torch.clamp(result_ch, min=0.0))
+            # denoise mid channels in multiple streams
+            with torch.cuda.stream(self._streams_ch_mid):
+                for i in range(1, self._rank_num_ch - 1):
+                    result_ch = self._den_ch_single(x[:, i - 1 : i + 2, :, :], i)
+                    result[:, i : i + 1, :, :].copy_(result_ch)
+
+            # denoise leftmost channel
+            with torch.cuda.stream(self._streams_ch_left):
+                if left_rank_req is not None:
+                    for req in left_rank_req:
+                        req.wait()
+                # prepare input for the denoiser
+                result_ch_l = self._den_ch_single(
+                    torch.cat([x_from_left, x[:, 0:2, :, :]], dim=1), 0
+                )
+                result[:, 0:1, :, :].copy_(result_ch_l)
+
+            # denoise rightmost channel
+            with torch.cuda.stream(self._streams_ch_right):
+                if right_rank_req is not None:
+                    for req in right_rank_req:
+                        req.wait()
+                # prepare input for the denoiser
+                result_ch_r = self._den_ch_single(
+                    torch.cat([x[:, -2:, :, :], x_from_right], dim=1),
+                    self._rank_num_ch - 1,
+                )
+                result[:, -1:, :, :].copy_(result_ch_r)
             # synchronize all streams
-            for s in self._streams_ch:
-                curr_stream.wait_stream(s)
-            
-            # if left_rank_req is not None:
-            #     for req in left_rank_req:
-            #         req.wait()
-            # if right_rank_req is not None:
-            #     for req in right_rank_req:
-            #         req.wait()
+            curr_stream.wait_stream(self._streams_ch_mid)
+            curr_stream.wait_stream(self._streams_ch_left)
+            curr_stream.wait_stream(self._streams_ch_right)
+
+        result = result.relu_()
 
         return result
-    
+
     def _den_ch_single(self, net_input, i) -> torch.Tensor:
         """
         Denoises a single channel input using the corresponding denoiser.
@@ -238,6 +252,7 @@ class ProxOpHyperAIRI(ProxOp):
 
         return result_ch
 
+    @torch.no_grad()
     def update(
         self,
         ch_heuristic: torch.Tensor = None,
@@ -253,31 +268,34 @@ class ProxOpHyperAIRI(ProxOp):
             heuristic (float): The heuristic noise level.
             peak_est (float): The estimated maximum intensity.
         """
-        peak_min = torch.empty(
-            1, self._rank_num_ch, 1 , 1, device=self._device, dtype=self._dtype
-        ).flatten()
-        peak_max = torch.empty(
-            1, self._rank_num_ch, 1 , 1, device=self._device, dtype=self._dtype
-        ).flatten()
+        peak_min = None
+        peak_max = None
 
         if ch_heuristic is not None and ch_peak_est is not None:
+            peak_min = torch.zeros(
+                1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
+            ).flatten()
+            peak_max = torch.zeros(
+                1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
+            ).flatten()
             ch_heu_peak = ch_heuristic / ch_peak_est
+            ch_heu_peak = ch_heu_peak.cpu().flatten().tolist()
 
             for i in range(self._rank_num_ch):
                 sigma_s = max(
                     filter(
-                        lambda sigma: sigma <= ch_heu_peak.view(-1)[i].item(),
+                        lambda sigma: sigma <= ch_heu_peak[i],
                         self._shelf.keys(),
                     ),
                     default=None,
                 )
-                if sigma_s:
+                if sigma_s is not None:
                     peak_max[i] = ch_heuristic.view(-1)[i] / sigma_s
                     sigma_s1 = min(
                         filter(lambda sigma: sigma > sigma_s, self._shelf.keys()),
                         default=None,
                     )
-                    if sigma_s1:
+                    if sigma_s1 is not None:
                         peak_min[i] = ch_heuristic.view(-1)[i] / sigma_s1
                 else:
                     sigma_s = min(self._shelf.keys())
@@ -285,20 +303,38 @@ class ProxOpHyperAIRI(ProxOp):
                     peak_max[i] = float("inf")
 
                 if abs(self._list_network_sigma[i] - sigma_s) > 1e-10:
-                    self._list_network_sigma[i] = sigma_s
                     self._list_network[i] = (
                         convert(self._shelf[sigma_s]).to(self._device).eval()
                     )
+                    if self._compile_net:
+                        self._list_network[i] = torch.compile(
+                            self._list_network[i], dynamic=False, mode="max-autotune"
+                        )
+                        # if self._rank == 0 and self._list_network_sigma[0] <= 0.0:
+                        _ = self._list_network[i](
+                            torch.ones(
+                                1,
+                                3,
+                                *self._img_size,
+                                device=self._device,
+                                dtype=self._dtype,
+                            )
+                        )
+
                     self._list_net_scaling[i] = ch_heuristic.view(-1)[i] / sigma_s
+                    self._list_network_sigma[i] = sigma_s
 
                     if self._verbose:
                         print(
-                            f"SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak.view(-1)[i].item():.3e}, "
+                            f"SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak[i]:.3e}, "
                             f"using network: {os.path.basename(self._shelf[sigma_s])}, "
                             f"peak range: [{peak_min[i].item():.3e}, {peak_max[i].item():.3e}], "
                             f"scaling factor: {self._list_net_scaling[i]:.3e}",
                             flush=True,
                         )
+
+            peak_min = peak_min.view(1, -1, 1, 1)
+            peak_max = peak_max.view(1, -1, 1, 1)
 
         if spec_idx is not None:
             for ch in range(
@@ -317,4 +353,4 @@ class ProxOpHyperAIRI(ProxOp):
             if self._verbose and self._rank == 0:
                 print("INFO: Update spectral correction weights.", flush=True)
 
-        return (peak_min.view(1, -1, 1, 1), peak_max.view(1, -1, 1, 1))
+        return (peak_min, peak_max)

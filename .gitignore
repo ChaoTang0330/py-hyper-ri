@@ -42,6 +42,9 @@ logs/
 *.p12
 *.pem
 
+# PyTorch
+.torchinductor_cache/
+
 # Exception
 !airi_denoisers/shelf*.csv
 !data/3c353_gdth.fits

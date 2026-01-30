@@ -123,9 +123,12 @@ class ForwardBackward(Optimiser):
                     forward_start_event.record()
             else:
                 self._t_forward = timer()
+            # x_hat = self._model - self._gd_step_size * (
+            #     self._meas_op.adjoint_op(self._meas_op.forward_op(self._model))
+            #     - self._meas_bp
+            # )
             x_hat = self._model - self._gd_step_size * (
-                self._meas_op.adjoint_op(self._meas_op.forward_op(self._model))
-                - self._meas_bp
+                self._meas_op.forward_adjoint_op(self._model) - self._meas_bp
             )
             x_hat = x_hat.to(
                 device=self._prox_op.get_device(), dtype=self._prox_op.get_data_type()

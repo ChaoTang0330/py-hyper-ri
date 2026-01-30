@@ -366,7 +366,7 @@ class FBHyperAIRI(ForwardBackward):
             bool: True if the stop criteria are met, False otherwise.
         """
         # img relative variation
-        model_norm = torch.sum(self._model ** 2)
+        model_norm = torch.sum(self._model**2)
         model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
         # gather norms from all ranks
         if self._is_distributed:
