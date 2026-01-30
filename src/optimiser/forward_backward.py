@@ -93,7 +93,8 @@ class ForwardBackward(Optimiser):
                 overwrite=True,
             )
 
-    @torch.no_grad()
+    # @torch.no_grad()
+    @torch.inference_mode()
     def run(self) -> None:
         """
         Runs the main loop of the forward-backward algorithm.

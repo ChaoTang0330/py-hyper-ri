@@ -52,6 +52,7 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
     # torch.backends.cudnn.rnn.fp32_precision = "ieee"
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
+    torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark = True
 
     # init torch.distributed

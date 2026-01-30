@@ -58,11 +58,13 @@ class ProxOpHyperAIRI(ProxOp):
         self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
+        self._flip_table = (tuple(), (2,), (3,), (2, 3))
         self._ch_freq = ch_freq.flatten()
         self._list_net_scaling = [1.0 for _ in range(rank_num_ch)]
         self._shelf = {}
         self._list_network = [None for _ in range(rank_num_ch)]
         self._list_network_sigma = [0.0 for _ in range(rank_num_ch)]
+        # self._dict_network = {}
         self._list_spec_corr_weight = [
             torch.ones(1, 3, 1, 1, device=self._device, dtype=self._dtype) / 3.0
             for _ in range(rank_num_ch)
@@ -116,9 +118,9 @@ class ProxOpHyperAIRI(ProxOp):
             torch.Tensor: The denoised tensor.
         """
         # exchange border channels with neighbouring ranks
-        x_to_left = x[:, :1, :, :].clone()
+        x_to_left = x[:, :1, :, :]
         x_from_left = torch.empty_like(x[:, :1, :, :])
-        x_to_right = x[:, -1:, :, :].clone()
+        x_to_right = x[:, -1:, :, :]
         x_from_right = torch.empty_like(x[:, -1:, :, :])
 
         if self._multi_stream:
@@ -130,6 +132,7 @@ class ProxOpHyperAIRI(ProxOp):
         if self._rank == 0:
             x_from_left = x_to_left
         elif self._world_size > 1:
+            x_to_left = x_to_left.clone()
             # communicate with left rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_left, self._rank - 1),
@@ -145,6 +148,7 @@ class ProxOpHyperAIRI(ProxOp):
         if self._rank == self._world_size - 1:
             x_from_right = x_to_right
         elif self._world_size > 1:
+            x_to_right = x_to_right.clone()
             # communicate with right rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_right, self._rank + 1),
@@ -229,9 +233,9 @@ class ProxOpHyperAIRI(ProxOp):
         """
         # apply denoiser
         if self._rand_trans:
-            flip_dim = ([], (2,), (3,), (2, 3))[torch.randint(4, (1,)).item()]
-            rot_times = torch.randint(4, (1,)).item()
-            x_trans = torch.flip(net_input, dims=flip_dim)
+            flip_dim = self._flip_table[torch.randint(4, (1,), device="cpu").item()]
+            rot_times = torch.randint(4, (1,), device="cpu").item()
+            x_trans = torch.flip(net_input, dims=flip_dim) if flip_dim else net_input
             x_trans = torch.rot90(x_trans, k=rot_times, dims=[2, 3])
             x_trans = x_trans.contiguous()
         else:
@@ -239,6 +243,10 @@ class ProxOpHyperAIRI(ProxOp):
         result_ch = (
             self._list_network[i](x_trans / self._list_net_scaling[i])
             * self._list_net_scaling[i]
+            # self._dict_network[self._list_network_sigma[i]](
+            #     x_trans / self._list_net_scaling[i]
+            # )
+            # * self._list_net_scaling[i]
         )
         if self._rand_trans:
             result_ch = torch.rot90(result_ch, k=-rot_times, dims=[2, 3])
@@ -308,7 +316,10 @@ class ProxOpHyperAIRI(ProxOp):
                     )
                     if self._compile_net:
                         self._list_network[i] = torch.compile(
-                            self._list_network[i], dynamic=False, mode="max-autotune"
+                            self._list_network[i],
+                            dynamic=False,
+                            mode="max-autotune",
+                            # mode="max-autotune-no-cudagraphs",
                         )
                         # if self._rank == 0 and self._list_network_sigma[0] <= 0.0:
                         _ = self._list_network[i](
