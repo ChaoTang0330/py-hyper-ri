@@ -18,6 +18,7 @@ from .ri_measurement_operator.pysrc.utils.io_hs import load_data_to_tensor_hs
 from .ri_measurement_operator.pysrc.measOperator.meas_op_hs import MeasOpHyperspectral
 # from .utils.dist import gather_ch_to_tensor
 
+from src.utils.gpu_mem_sampler import GPUMaxMemSampler
 
 def env_int(name: str, default: int) -> int:
     v = os.environ.get(name)
@@ -171,16 +172,33 @@ def imager_hs(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> 
 
     # imaging
     if param_optimiser["flag_imaging"]:
+
         # initialisation
         optimiser.initialisation()
-        # run imaging loop
-        optimiser.run()
+
+        props = torch.cuda.get_device_properties(device)
+        # domain:bus:device.function  (function is almost always 0 for GPUs)
+        pci_bus_id = f"{props.pci_domain_id:08x}:{props.pci_bus_id:02x}:{props.pci_device_id:02x}.0"
+
+        with GPUMaxMemSampler(
+            # gpu_index=0,
+            pci_bus_id=pci_bus_id,
+            burst_seconds=10.0,
+            burst_interval_s=0.01,
+            eps_bytes=10 << 20,  # 10 MiB
+        ) as gpu_mem_sampler:
+            # run imaging loop
+            optimiser.run()
+        
         # finalisation
         optimiser.finalisation()
 
+        max_mem_used = gpu_mem_sampler.max_used_bytes
+        max_mem_used = max(max_mem_used, torch.cuda.memory_allocated())
+
         dist.barrier()
         print(
-            f"INFO: rank {param_comm['rank']}: The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
+            f"INFO: rank {param_comm['rank']}: The maximum GPU memory allocated {max_mem_used}",
             flush=True,
         )
 
