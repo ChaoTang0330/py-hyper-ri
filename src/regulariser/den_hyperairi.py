@@ -8,17 +8,17 @@ import torch
 import torch.distributed as dist
 from onnx2torch import convert
 
-from .prox_op import ProxOp
+from .regulariser import Regulariser
 
 # TODO: Add faceting functionality
 
 
-class ProxOpHyperAIRI(ProxOp):
+class DenHyperAIRI(Regulariser):
     """
-    HyperAIRI proximity operator
+    HyperAIRI denoiser
 
-    This class implements the HyperAIRI proximity operator which uses AIRI denoisers for regularisations.
-    It uses a shelf of pre-trained AIRI denoisers and selects the appropriate one based on
+    This class implements the HyperAIRI denoiser which uses HyperAIRI denoisers for regularisations.
+    It uses a shelf of pre-trained HyperAIRI denoisers and selects the appropriate one based on
     the estimated maximum intensities of the target image and the heuristic noise level.
     """
 
@@ -30,8 +30,6 @@ class ProxOpHyperAIRI(ProxOp):
         ch_freq: torch.Tensor,
         shelf_path: str,
         rand_trans: bool = True,
-        multi_stream: bool = False,
-        compile_net: bool = True,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
@@ -54,7 +52,6 @@ class ProxOpHyperAIRI(ProxOp):
         super().__init__(device=device, dtype=dtype)
 
         self._img_size = img_size
-        self._compile_net = compile_net
         self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
@@ -64,19 +61,11 @@ class ProxOpHyperAIRI(ProxOp):
         self._shelf = {}
         self._list_network = [None for _ in range(rank_num_ch)]
         self._list_network_sigma = [0.0 for _ in range(rank_num_ch)]
-        # self._dict_network = {}
         self._list_spec_corr_weight = [
             torch.ones(1, 3, 1, 1, device=self._device, dtype=self._dtype) / 3.0
             for _ in range(rank_num_ch)
         ]
         self._verbose = verbose
-
-        self._rank = 0
-        self._world_size = 1
-        self._is_dist = dist.is_available() and dist.is_initialized()
-        if self._is_dist:
-            self._rank = dist.get_rank()
-            self._world_size = dist.get_world_size()
 
         # load paths of networks
         if not os.path.isfile(shelf_path):
@@ -90,21 +79,6 @@ class ProxOpHyperAIRI(ProxOp):
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
         self._shelf = dict(sorted(self._shelf.items()))
-
-        # multi strem
-        self._multi_stream = multi_stream and (device.type == "cuda")
-        if self._multi_stream:
-            # self._streams_ch = [
-            #     torch.cuda.Stream(device=self._device) for _ in range(rank_num_ch)
-            # ]
-            self._streams_ch_left = torch.cuda.Stream(device=self._device)
-            self._streams_ch_right = torch.cuda.Stream(device=self._device)
-            self._streams_ch_mid = torch.cuda.Stream(device=self._device)
-            if self._verbose and self._rank == 0:
-                print(
-                    "INFO: Using multi CUDA streams in HyperAIRI denoising.",
-                    flush=True,
-                )
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
@@ -243,10 +217,6 @@ class ProxOpHyperAIRI(ProxOp):
         result_ch = (
             self._list_network[i](x_trans / self._list_net_scaling[i])
             * self._list_net_scaling[i]
-            # self._dict_network[self._list_network_sigma[i]](
-            #     x_trans / self._list_net_scaling[i]
-            # )
-            # * self._list_net_scaling[i]
         )
         if self._rand_trans:
             result_ch = torch.rot90(result_ch, k=-rot_times, dims=[2, 3])
@@ -314,24 +284,6 @@ class ProxOpHyperAIRI(ProxOp):
                     self._list_network[i] = (
                         convert(self._shelf[sigma_s]).to(self._device).eval()
                     )
-                    if self._compile_net:
-                        self._list_network[i] = torch.compile(
-                            self._list_network[i],
-                            dynamic=False,
-                            mode="max-autotune",
-                            # mode="max-autotune-no-cudagraphs",
-                        )
-                        # if self._rank == 0 and self._list_network_sigma[0] <= 0.0:
-                        _ = self._list_network[i](
-                            torch.ones(
-                                1,
-                                3,
-                                *self._img_size,
-                                device=self._device,
-                                dtype=self._dtype,
-                            )
-                        )
-
                     self._list_net_scaling[i] = ch_heuristic.view(-1)[i] / sigma_s
                     self._list_network_sigma[i] = sigma_s
 

@@ -3,7 +3,7 @@ Forward-backward algorithm
 """
 
 import os
-from typing import Union
+from typing import Optional
 from timeit import default_timer as timer
 import torch
 import torch.distributed as dist
@@ -27,8 +27,8 @@ class ForwardBackward(Optimiser):
         self,
         meas: torch.Tensor,
         meas_op: MeasOp,
-        meas_op_precise: Union[MeasOp, None],
         prox_op: ProxOp,
+        meas_op_precise: Optional[MeasOp] = None,
         im_max_itr: int = 2000,
         save_pth: str = "results",
         file_prefix: str = "",

@@ -31,7 +31,6 @@
         },
         "computing": {
             "computing_comment_1": "computing resources",
-            "ncpus": [],
             "meas_device": "cpu",
             "meas_dtype": "single",
             "prox_device": "cpu",

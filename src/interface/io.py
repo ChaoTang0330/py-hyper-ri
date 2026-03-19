@@ -1,15 +1,80 @@
 """
-Prepare input variables for imager
+Utility functions for input/output operations.
 """
 
-from typing import Any, Dict, Optional
+import os
 import argparse
 import json
-import os
+import h5py
+from typing import Any, Dict, Optional
 
-from src.imager_hs import imager_hs
-from src.utils import set_imaging_params_ri_hs
+import numpy as np
+from scipy.io import loadmat
+from scipy.io.matlab import matfile_version
 
+def env_int(name: str, default: int) -> int:
+    """
+    Retrieve an integer value from the environment variable.
+
+    Args:
+        name (str): The name of the environment variable.
+        default (int): The default value to return if the environment variable is not set.
+    Returns:
+        int: The integer value of the environment variable or the default value.
+    """
+    v = os.environ.get(name)
+    return int(v) if v is not None else default
+
+
+def print_dict(curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = True) -> None:
+    """
+    Print items in a dictionary.
+
+    Args:
+        curr_dict (Dict[str, Any]): Dictionary to print.
+        indentation (int, optional): The number of spaces to indent each line. Defaults to 4.
+        flush (bool, optional): Whether to flush the output buffer. Defaults to True.
+    """
+    for k, v in curr_dict.items():
+        print(' ' * indentation + f"{k}: {v}", flush=flush)
+
+def verbose_print(*args: str, verbose: bool = True):
+    """
+    Print messages if verbose is True.
+
+    Args:
+        args (str): Variable length argument list of strings to print.
+        verbose (bool, optional): Flag to indicate whether to print the messages. Defaults to True.
+
+    """
+    if verbose:
+        print(*args, flush=True)
+
+
+def load_mat_to_np(file_name: str) -> Dict[str, Any]:
+    """
+    Check mat file version and load data. If the mat file has the latest version (v7.3),
+    it will be loaded using h5py. Otherwise, it will be loaded using scipy.io.loadmat.
+
+    Args:
+        file_name (str): Path of the .mat file to load.
+    Returns:
+        dict: A dictionary containing the data loaded from the .mat file.
+    """
+    data = {}
+    mat_version, _ = matfile_version(file_name)
+    if mat_version == 2:
+        data = dict()
+        with h5py.File(file_name, "r") as h5_file:
+            for key, h5obj in h5_file.items():
+                if isinstance(h5obj, h5py.Dataset):
+                    data[key] = np.array(h5obj)
+                    if data[key].dtype.names and "imag" in data[key].dtype.names:
+                        data[key] = data[key]["real"] + 1j * data[key]["imag"]
+    else:
+        data = loadmat(file_name)
+
+    return data
 
 def parsing_arguments() -> argparse.Namespace:
     """
@@ -23,7 +88,7 @@ def parsing_arguments() -> argparse.Namespace:
         "-c",
         "--config",
         type=str,
-        default="./config/example.json",
+        default="./config/default.json",
         help="path of the configuration file",
     )
     parser.add_argument(
@@ -67,10 +132,29 @@ def parsing_arguments() -> argparse.Namespace:
         help="imaging super-resolution factor",
     )
     parser.add_argument(
-        "--groundtruth",
-        type=str,
+        "--ch_start",
+        type=int,
         default=None,
-        help="path of the groundtruth image in fits format",
+        help="starting physical channel index of the data",
+    )
+    parser.add_argument(
+        "--ch_last",
+        type=int,
+        default=None,
+        help="last physical channel index of the data",
+    )
+    parser.add_argument(
+        "--ch_effective",
+        type=int,
+        default=None,
+        help="number of effective channels of the result image cube",
+    )
+    parser.add_argument(
+        "--ch_partition",
+        type=int,
+        nargs="+",
+        default=None,
+        help="list of channel indices for partitioning the data",
     )
     parser.add_argument(
         "--run_id",
@@ -108,7 +192,7 @@ def parsing_parameters(
     if input_param is not None:
         dict_input_param = vars(input_param)
         for k, v in dict_input_param.items():
-            if k in param.keys() and v is not None:
+            if k in param and v is not None:
                 param[k] = v
 
     # load general parameters
@@ -121,6 +205,8 @@ def parsing_parameters(
         list_keys.extend(["usara", "usara_default"])
     elif param["algorithm"] == "hyperairi":
         list_keys.extend(["hyperairi", "hyperairi_default"])
+    elif param["algorithm"] == "hyper-usara":
+        list_keys.extend(["hyper-usara", "hyper-usara_default"])
     else:
         raise NotImplementedError(f"Algorithm {param['algorithm']} not found\n")
     for key in list_keys:
@@ -131,47 +217,3 @@ def parsing_parameters(
         param["dnn_shelf_path"] = input_param.dnn_shelf_path
 
     return param
-
-
-def print_dict(curr_dict: Dict[str, Any], flush: bool = True) -> None:
-    """
-    Prints items in a dictionary.
-
-    Args:
-        curr_dict (Dict[str, Any]): Dictionary to print.
-        flush (bool, optional): Whether to flush the output buffer. Defaults to True.
-    """
-    for k, v in curr_dict.items():
-        print(f"    {k}: {v}", flush=flush)
-
-def env_int(name: str, default: int) -> int:
-    v = os.environ.get(name)
-    return int(v) if v is not None else default
-
-if __name__ == "__main__":
-    rank = env_int("RANK", 0)
-
-    input_args = parsing_arguments()
-    param_general = parsing_parameters(input_args.config, input_param=input_args)
-    param_measop, param_proxop, param_optimiser = set_imaging_params_ri_hs(param_general)
-
-    if param_optimiser["verbose"] and rank == 0:
-        print("Input parameters", flush=True)
-        print(json.dumps(param_general, indent=4), flush=True)
-        print(
-            "________________________________________________________________\n",
-            flush=True,
-        )
-        print("Imaging parameters:", flush=True)
-        print("  param_optimiser:", flush=True)
-        print_dict(param_optimiser, flush=True)
-        print("  param_measop:", flush=True)
-        print_dict(param_measop, flush=True)
-        print("  param_proxop:", flush=True)
-        print_dict(param_proxop, flush=True)
-        print(
-            "________________________________________________________________\n",
-            flush=True,
-        )
-
-    imager_hs(param_optimiser, param_measop, param_proxop)

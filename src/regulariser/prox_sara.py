@@ -1,13 +1,15 @@
 """
-Proximity operator for SARA and positivity
+Proximity operator for SARA with positivity constraint.
 """
 
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Optional
+import math
+
 import torch
-import numpy as np
+import torch.distributed as dist
 import ptwt
 
-from .prox_op import ProxOp
+from .regulariser import Regulariser
 
 WaveletCoeff = List[
     Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
@@ -15,7 +17,7 @@ WaveletCoeff = List[
 WaveletDictCoeff = List[Union[WaveletCoeff, torch.Tensor]]
 
 
-class ProxOpSARAPos(ProxOp):
+class ProxSARAPos(Regulariser):
     """
     Proximity operator for SARA with positivity constrained.
 
@@ -28,7 +30,7 @@ class ProxOpSARAPos(ProxOp):
     def __init__(
         self,
         img_size: Tuple[int, int],
-        sfth_val: float = 1.0e-4,
+        rank_num_ch: int = 1,
         wl_dict: Tuple[str, ...] = (
             "dirac",
             "db1",
@@ -41,24 +43,25 @@ class ProxOpSARAPos(ProxOp):
             "db8",
         ),
         dec_lev: int = 4,
-        wl_noise_floor: float = 1.0e-4,
         mode: str = "zero",
+        sfth_val: Optional[torch.Tensor] = None,
+        wl_noise_floor: Optional[torch.Tensor] = None,
         max_iter: int = 20,
         obj_tol: float = 1e-4,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
-        verbose: bool = True,
+        verbose: Union[bool, int] = True,
     ) -> None:
         """
         Initializes the SARA positivity proximity operator with the given parameters.
 
         Args:
             img_size (Tuple[int, int]): The size of the image.
-            sfth_val (float, optional): The soft thresholding value. Defaults to 1.0e-4.
+            sfth_val (torch.Tensor, optional): The soft thresholding value. Defaults to 1.0e-4.
             wl_dict (Tuple[str, ...], optional): The wavelet dictionary.
                 Defaults to ("dirac", "db1", "db2", "db3", "db4", "db5", "db6", "db7", "db8").
             dec_lev (int, optional): The decomposition level. Defaults to 4.
-            wl_noise_floor (float, optional): The noise floor level in wavelet coefficient.
+            wl_noise_floor (torch.Tensor, optional): The noise floor level in wavelet coefficient.
                 Defaults to 1.0e-4.
             mode (str, optional): The mode for wavelet decomposition and reconstruction.
                 Defaults to "zero".
@@ -72,16 +75,19 @@ class ProxOpSARAPos(ProxOp):
         super().__init__(device=device, dtype=dtype)
 
         self._img_size = img_size
+        self._rank_num_ch = rank_num_ch
         self._sfth_val = sfth_val
         self._dec_lev = dec_lev
         self._wl_noise_floor = wl_noise_floor
         self._mode = mode
-        self._scale_factor = np.sqrt(len(wl_dict))
+        self._scale_factor = math.sqrt(len(wl_dict))
         self._wl_dict = list(wl_dict)
         self._dirac = "dirac" in self._wl_dict
         self._verbose = verbose
         self._weights = []
-        self._norm_l1 = 0.0
+        self._norm_l1 = torch.zeros(
+            1, device=self._device, dtype=self._dtype
+        )
         self._max_iter = max_iter
         self._obj_tol = obj_tol
         if self._dirac:
@@ -89,21 +95,12 @@ class ProxOpSARAPos(ProxOp):
 
         # initialise dual variable
         self._dual = self._wavedec2_dict(
-            torch.zeros((1, 1, *self._img_size), device=self._device, dtype=self._dtype)
+            torch.zeros(
+                (1, self._rank_num_ch, *self._img_size),
+                device=self._device,
+                dtype=self._dtype,
+            )
         )
-
-        # self._coeffShape = []
-        # img = torch.zeors(1,1,*img_size)
-        # for basis in self._wl_dict:
-        #     curr_coeff = ptwt.wavedec2(img, basis, level=self._dec_lev, mode=self._mode)
-        #     coeffStart = 0
-        #     coeffEnd = coeffStart + torch.numel(curr_coeff[0])
-        #     self._coeffShape.append([(coeffStart,coeffEnd), curr_coeff[0].shape])
-        #     for i in range(1, self.dec_lev+1):
-        #         currShape = []
-        #         for j in range(3):
-        #             coeffStart = coeffEnd
-        #             coeffEnd = coeffStart + torch.numel(curr_coeff[i][0])
 
     def _wavedec2_dict(self, x: torch.Tensor) -> WaveletDictCoeff:
         """
@@ -151,7 +148,11 @@ class ProxOpSARAPos(ProxOp):
             torch.Tensor: The reconstructed image.
         """
         result = torch.zeros(
-            1, 1, *self._img_size, device=self._device, dtype=self._dtype
+            1,
+            self._rank_num_ch,
+            *self._img_size,
+            device=self._device,
+            dtype=self._dtype,
         )
         for i, basis in enumerate(self._wl_dict):
             result += ptwt.waverec2(y[i], basis) / self._scale_factor
@@ -159,14 +160,14 @@ class ProxOpSARAPos(ProxOp):
             result += y[-1] / self._scale_factor
         return result
 
-    def _prox_l1_adj(self, z: torch.tensor, sfth: float) -> torch.tensor:
+    def _prox_l1_adj(self, z: torch.Tensor, sfth: torch.Tensor) -> torch.Tensor:
         """
         Proximity operator for the adjoint of l1 norm.
 
         Args:
             z (torch.Tensor): The input tensor.
-            sfth (float): The soft thresholding level.
-
+            sfth (torch.Tensor): The soft thresholding level. The level can be
+                different for each channel.
         Returns:
             torch.Tensor: The result of applying the proximity operator on `z`.
         """
@@ -174,7 +175,7 @@ class ProxOpSARAPos(ProxOp):
             torch.sign(z)
             * torch.maximum(
                 torch.abs(z) - sfth,
-                torch.zeros(1, 1, device=self._device, dtype=self._dtype),
+                torch.tensor(0.0, device=self._device, dtype=self._dtype),
             )
         )
 
@@ -186,12 +187,18 @@ class ProxOpSARAPos(ProxOp):
             psit_img (WaveletDictCoeff):
                 The list of wavelet coeeficitents on which soft thresholding will be applied.
         """
-        self._norm_l1 = 0.0
+        norm_l1_ch = torch.zeros(
+            1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
+        )
         for i in range(len(self._wl_dict)):
             self._dual[i][0] = self._prox_l1_adj(
                 self._dual[i][0] + psit_img[i][0], self._sfth_val * self._weights[i][0]
             )
-            self._norm_l1 += torch.sum(torch.abs(psit_img[i][0] * self._weights[i][0]))
+            norm_l1_ch += torch.sum(
+                torch.abs(psit_img[i][0] * self._weights[i][0]),
+                dim=(2, 3),
+                keepdim=True,
+            )
             for j in range(1, self._dec_lev + 1):
                 self._dual[i][j] = tuple(
                     self._prox_l1_adj(
@@ -201,14 +208,20 @@ class ProxOpSARAPos(ProxOp):
                     for k in range(3)
                 )
                 for k in range(3):
-                    self._norm_l1 += torch.sum(
-                        torch.abs(psit_img[i][j][k] * self._weights[i][j][k])
+                    norm_l1_ch += torch.sum(
+                        torch.abs(psit_img[i][j][k] * self._weights[i][j][k]),
+                        dim=(2, 3),
+                        keepdim=True,
                     )
         if self._dirac:
             self._dual[-1] = self._prox_l1_adj(
                 self._dual[-1] + psit_img[-1], self._sfth_val * self._weights[-1]
             )
-            self._norm_l1 += torch.sum(torch.abs(psit_img[-1] * self._weights[-1]))
+            norm_l1_ch += torch.sum(
+                torch.abs(psit_img[-1] * self._weights[-1]), dim=(2, 3), keepdim=True
+            )
+        
+        self._norm_l1 = torch.sum(norm_l1_ch * self._sfth_val)
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
@@ -223,43 +236,45 @@ class ProxOpSARAPos(ProxOp):
             torch.Tensor: The output tensor after applying the proximity operator.
         """
         # dual forward backward
-        obj_val_prev = -1
+        obj_val_prev = 0
         for i in range(self._max_iter):
             # primal update
             result = torch.maximum(
                 x - self._waverec2_dict(self._dual),
-                torch.zeros(
-                    1,
-                    1,
+                torch.tensor(
+                    0.0,
                     device=self._device,
                     dtype=self._dtype,
                 ),
             )
-            norm_l2 = torch.sum((result - x) ** 2)
+            norm_l2_2 = torch.sum((result - x) ** 2)
             # dual update
             self._sfth_dual(self._wavedec2_dict(result))
             # stop criterion
-            obj_val = 0.5 * norm_l2.item() + self._sfth_val * self._norm_l1.item()
-            obj_rel_var = abs(obj_val - obj_val_prev) / obj_val
+            if self._is_dist:
+                dist.all_reduce(norm_l2_2, op=dist.ReduceOp.SUM)
+                dist.all_reduce(self._norm_l1, op=dist.ReduceOp.SUM)
+            obj_val = 0.5 * norm_l2_2.item() + self._norm_l1.item()
+            obj_rel_var = abs(obj_val - obj_val_prev) / max(abs(obj_val), 1e-12)
             obj_val_prev = obj_val
-            if self._verbose > 1:
+            if self._verbose > 1 and self._rank == 0:
                 print(
-                    f"  Prox Iter {i+1}, prox_fval = {obj_val},",
-                    f"rel_fval = {obj_rel_var}, l1norm_w = {self._norm_l1.item()}",
+                    f"  Prox Iter {i+1}, prox_fval = {obj_val:.3e},",
+                    f"rel_fval = {obj_rel_var:.3e}, l1norm_w = {self._norm_l1.item():.3e}",
                     flush=True,
                 )
             if obj_rel_var < self._obj_tol:
                 break
-        if self._verbose:
+        if self._verbose and self._rank == 0:
             print(
-                f"  Prox converged: Iter {i+1}, rel_fval = {obj_rel_var},",
-                f"l1norm_w = {self._norm_l1.item()}",
+                f"  Prox converged: Iter {i+1}, rel_fval = {obj_rel_var:.3e},",
+                f"l1norm_w = {self._norm_l1.item():.3e}",
                 flush=True,
             )
 
         return result
 
-    def update(self, x: torch.tensor, initialisation: bool = False) -> None:
+    def update(self, x: torch.Tensor) -> None:  # initialisation: bool = False
         """
         Update the weight for l1 norm.
 
@@ -269,44 +284,29 @@ class ProxOpSARAPos(ProxOp):
                 Defaults to False.
         """
         self._weights = []
-        if initialisation:
-            torch_one = torch.ones(
-                1,
-                1,
-                device=self._device,
-                dtype=self._dtype,
+
+        x = x.to(self._dtype).to(self._device)
+        for basis in self._wl_dict:
+            curr_coeff = ptwt.wavedec2(
+                x / self._scale_factor, basis, level=self._dec_lev, mode=self._mode
             )
-            for basis in self._wl_dict:
-                weighting_i = [torch_one.clone()]
-                for i in range(1, self._dec_lev + 1):
-                    weighting_i.append(tuple(torch_one.clone() for _ in range(3)))
-                self._weights.append(weighting_i)
-            if self._dirac:
-                self._weights.append(torch_one.clone())
-        else:
-            x = x.to(self._dtype).to(self._device)
-            for basis in self._wl_dict:
-                curr_coeff = ptwt.wavedec2(
-                    x / self._scale_factor, basis, level=self._dec_lev, mode=self._mode
-                )
-                weighting_i = [
-                    self._wl_noise_floor
-                    / (self._wl_noise_floor + torch.abs(curr_coeff[0]))
-                ]
-                for i in range(1, self._dec_lev + 1):
-                    weighting_i.append(
-                        tuple(
-                            self._wl_noise_floor
-                            / (self._wl_noise_floor + torch.abs(curr_coeff[i][j]))
-                            for j in range(3)
-                        )
+            weighting_i = [
+                self._wl_noise_floor / (self._wl_noise_floor + torch.abs(curr_coeff[0]))
+            ]
+            for i in range(1, self._dec_lev + 1):
+                weighting_i.append(
+                    tuple(
+                        self._wl_noise_floor
+                        / (self._wl_noise_floor + torch.abs(curr_coeff[i][j]))
+                        for j in range(3)
                     )
-                self._weights.append(weighting_i)
-            if self._dirac:
-                self._weights.append(
-                    self._wl_noise_floor
-                    / (self._wl_noise_floor + torch.abs(x / self._scale_factor))
                 )
+            self._weights.append(weighting_i)
+        if self._dirac:
+            self._weights.append(
+                self._wl_noise_floor
+                / (self._wl_noise_floor + torch.abs(x / self._scale_factor))
+            )
 
     def get_l1_norm(self) -> float:
         """
@@ -317,20 +317,24 @@ class ProxOpSARAPos(ProxOp):
         """
         return self._norm_l1.item()
 
-    def set_noise_floor_level(self, wl_noise_floor: float) -> None:
+    def set_noise_floor_level(self, wl_noise_floor: torch.Tensor) -> None:
         """
         Sets the noise floor level in wavelet coefficient.
 
         Args:
             wl_noise_floor (float): The noise floor level to set.
         """
-        self._wl_noise_floor = wl_noise_floor
+        self._wl_noise_floor = wl_noise_floor.view(1, self._rank_num_ch, 1, 1).to(
+            device=self._device, dtype=self._dtype
+        )
 
-    def set_soft_thresholding_value(self, sfth_val: float):
+    def set_soft_thresholding_value(self, sfth_val: torch.Tensor) -> None:
         """
         Sets the soft thresholding level of the proximity operator.
 
         Args:
             sfth_val (float): The soft thresholding level for the wavelet coefficients.
         """
-        self._sfth_val = sfth_val
+        self._sfth_val = sfth_val.view(1, self._rank_num_ch, 1, 1).to(
+            device=self._device, dtype=self._dtype
+        )

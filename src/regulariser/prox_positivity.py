@@ -4,10 +4,10 @@ Proximity operator for positivity
 
 import torch
 
-from .prox_op import ProxOp
+from .regulariser import Regulariser
 
 
-class ProxOpPositivity(ProxOp):
+class ProxOpPositivity(Regulariser):
     """
     Proximity operator for positivity.
 

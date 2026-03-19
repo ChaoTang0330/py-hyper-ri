@@ -4,15 +4,18 @@ Base class for proximity operator
 
 from abc import ABC, abstractmethod
 from typing import Any
+
 import torch
+import torch.distributed as dist
 
 
-class ProxOp(ABC):
+class Regulariser(ABC):
     """
-    Base class for proximity operator.
+    Base class for regulariser.
 
-    This class provides the base functionality for a proximity operator.
-    It defines common methods for various proximity operators, such as
+    This class provides the base functionality for a regulariser.
+    It defines common methods for various regularisers, such as
+
     applying the operator to an input and updating the operator.
     The actual implementation of these methods are left to the subclasses.
     """
@@ -23,7 +26,7 @@ class ProxOp(ABC):
         dtype: torch.dtype = torch.float,
     ) -> None:
         """
-        Initialize the ProxOp class.
+        Initialize the Regulariser class.
 
         Args:
             device (torch.device, optional): The device for the tensors.
@@ -34,10 +37,18 @@ class ProxOp(ABC):
         self._dtype = dtype
         self._device = device
 
+        # distributed parameters
+        self._rank = 0
+        self._world_size = 1
+        self._is_dist = dist.is_available() and dist.is_initialized()
+        if self._is_dist:
+            self._rank = dist.get_rank()
+            self._world_size = dist.get_world_size()
+
     @abstractmethod
     def __call__(self, x: torch.Tensor) -> Any:
         """
-        Apply proximity operator to input.
+        Apply regulariser to input.
 
         Args:
             x (torch.Tensor): The input tensor.
@@ -50,7 +61,7 @@ class ProxOp(ABC):
     @abstractmethod
     def update(self, *args, **kwargs) -> Any:
         """
-        Update proximity operator.
+        Update regulariser.
 
         This method should be implemented in a subclass.
         The input arguments can be arbitrary and should be specified in the subclass.
@@ -59,19 +70,19 @@ class ProxOp(ABC):
 
     def get_device(self) -> torch.device:
         """
-        Return the device that the proximity operator is running on.
+        Return the device that the regulariser is running on.
 
         Returns:
-            torch.device: The device that the proximity operator is running on.
+            torch.device: The device that the regulariser is running on.
         """
         return self._device
 
     def get_data_type(self) -> torch.dtype:
         """
-        Return the data type of the data that the proximity operator will accept and return.
+        Return the data type of the data that the regulariser will accept and return.
 
         Returns:
-            torch.dtype: The data type of the data that the proximity operator will accept
+            torch.dtype: The data type of the data that the regulariser will accept
                 and return.
         """
         return self._dtype

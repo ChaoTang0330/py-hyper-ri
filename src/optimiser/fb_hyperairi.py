@@ -1,5 +1,5 @@
 """
-Unconstrained AIRI, built on forward-backward algorithm
+HyperAIRI, built on forward-backward algorithm
 """
 
 import os
@@ -10,17 +10,14 @@ import numpy as np
 from astropy.io import fits
 
 from .forward_backward import ForwardBackward
-from ..prox_operator import ProxOpAIRI
-from ..ri_measurement_operator.pysrc.measOperator import MeasOpHyperspectral
-from ..ri_measurement_operator.pysrc.measOperator.meas_op_PSF import (
-    MeasOpPSF,
-)
+from ..regulariser import DenHyperAIRI
+from ..ri_measurement_operator import MeasOpHyperspectral
 from ..utils.spectral_index import fit_clean_beam, get_spec_idx
 
 
 class FBHyperAIRI(ForwardBackward):
     """
-    FBHyperAIRI implements the AIRI algorithm based on Forward-Backward.
+    FBHyperAIRI implements the HyperAIRI algorithm based on Forward-Backward.
 
     It handles data fidelity in the forward step and uses AIRI denoisers
     in the backward step for regularization.
@@ -31,8 +28,7 @@ class FBHyperAIRI(ForwardBackward):
         meas: torch.Tensor,
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
-        prox_op: ProxOpAIRI,
-        meas_op_approx: Union[MeasOpPSF, None] = None,
+        prox_op: DenHyperAIRI,
         ch_start: int = 0,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
@@ -61,10 +57,7 @@ class FBHyperAIRI(ForwardBackward):
         Args:
             meas (torch.Tensor): The measurement tensor.
             meas_op (MeasOpHyperspectral): The measurement operator.
-            prox_op (ProxOpAIRI): The proximal operator.
-            meas_op_approx (Union[MeasOpPSF, None], optional): The approximate measurement
-                operator build on oversampled PSF. The AIRI algorithm will use this operator
-                for reconstruction if it is not None. Defaults to None.
+            prox_op (DenHyperAIRI): The denoising operator.
             im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
             im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
             im_var_tol (float, optional): The tolerance for image variation. Defaults to 1e-4.
@@ -92,7 +85,6 @@ class FBHyperAIRI(ForwardBackward):
         """
         super().__init__(
             meas,
-            meas_op if meas_op_approx is None else meas_op_approx,
             meas_op,
             prox_op,
             im_max_itr=im_max_itr,
@@ -338,11 +330,6 @@ class FBHyperAIRI(ForwardBackward):
                     f"INFO: forward-backward step size: {self._gd_step_size}",
                     flush=True,
                 )
-                if isinstance(self._meas_op, MeasOpPSF):
-                    print(
-                        "INFO: use approximate measurement operator for reconstruction",
-                        flush=True,
-                    )
                 print("\n*************************************************", flush=True)
                 print("********* STARTING ALGORITHM: HyperAIRI *********", flush=True)
                 print("*************************************************", flush=True)
