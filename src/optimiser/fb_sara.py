@@ -3,18 +3,18 @@ uSARA algorithm, built on forward-backward algorithm
 """
 
 import os
-from typing import Union
+from typing import Optional
 from timeit import default_timer as timer
+
 import torch
+import torch.distributed as dist
 import numpy as np
 from astropy.io import fits
 
 from .forward_backward import ForwardBackward
-from ..prox_operator import ProxOpSARAPos
-from ..ri_measurement_operator.pysrc.measOperator import MeasOpNUFFT
-from ..ri_measurement_operator.pysrc.measOperator.meas_op_PSF import (
-    MeasOpPSF,
-)
+from ..regulariser import ProxSARAPos
+from ..ri_measurement_operator import MeasOpHyperspectral
+from ..utils.spectral_index import get_spec_idx
 
 
 class FBSARA(ForwardBackward):
@@ -28,10 +28,9 @@ class FBSARA(ForwardBackward):
     def __init__(
         self,
         meas: torch.Tensor,
-        meas_op: MeasOpNUFFT,
-        prox_op: ProxOpSARAPos,
-        use_ROP: bool = False,
-        meas_op_approx: Union[MeasOpPSF, None] = None,
+        meas_op: MeasOpHyperspectral,
+        regulariser: ProxSARAPos,
+        meas_op_approx: Optional[MeasOpHyperspectral] = None,
         im_min_itr: int = 30,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-5,
@@ -48,8 +47,8 @@ class FBSARA(ForwardBackward):
 
         Args:
             meas (torch.Tensor): The measurements to be used in the algorithm.
-            meas_op (MeasOpTkbnRI): The measurement operator.
-            prox_op (ProxOpSARAPos): The proximal operator.
+            meas_op (MeasOpHyperspectral): The measurement operator.
+            regulariser (ProxSARAPos): The proximal operator.
             im_min_itr (int, optional): The minimum number of inner loop iterations.
                 Defaults to 30.
             im_max_itr (int, optional): The maximum number of inner loop iterations.
@@ -67,21 +66,21 @@ class FBSARA(ForwardBackward):
             Defaults to True.
             verbose (bool, optional): Whether to print verbose logs. Defaults to True.
         """
-        super(FBSARA, self).__init__(
+        super().__init__(
             meas,
             meas_op if meas_op_approx is None else meas_op_approx,
-            meas_op,
-            prox_op,
+            regulariser,
+            meas_op_precise=meas_op,
+            heu_noise_scale=heu_reg_scale,
             im_max_itr=im_max_itr * im_max_itr_outer,
             save_pth=save_pth,
             file_prefix=file_prefix,
         )
 
-        self._use_ROP = use_ROP
+        self._use_approx_meas_op = meas_op_approx is not None
         self._im_max_itr_inner = im_max_itr
         self._im_min_itr = im_min_itr
         self._im_var_tol = im_var_tol
-        self._heu_reg_scale = heu_reg_scale
         self._im_max_itr_outer = im_max_itr_outer
         self._im_var_tol_outer = im_var_tol_outer
         self._reweight_save = reweight_save
@@ -104,50 +103,34 @@ class FBSARA(ForwardBackward):
         sets the heuristic regularization parameter and the noise floor level in
         the wavelet domain. Some information will be printed if `verbose` is True.
         """
+        if self._is_distributed:
+            dist.barrier()
+        if self._rank == 0 and self._verbose:
+            print("\nINFO: Initialisation uSARA optimiser...", flush=True)
+
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
         # heuristic noise level
-        self._heuristic = 1 / np.sqrt(2 * self._meas_op_precise.get_op_norm())
-        if self._verbose:
+        self._calculate_channel_wise_heuristic()
+
+        # set noise floor level in wavelet domain
+        # The noise floor level is not affected by the heuristic scaling factor
+        # divided by 3.0 -> 9 wavelet bases
+        self._regulariser.set_noise_floor_level(
+            self._heuristic / 3.0 / self._heu_noise_scale
+        )
+        if self._verbose and self._rank == 0:
             print(
-                f"INFO: measurement operator norm {self._meas_op_precise.get_op_norm()}",
+                f"INFO: estimated noise floor level in "
+                f"wavelet coeeficients: {self._heuristic/3.0}",
                 flush=True,
             )
-            print(f"INFO: heuristic noise level: {self._heuristic}", flush=True)
-        heu_corr_factor = np.sqrt(
-            self._meas_op_precise.get_op_norm_prime()
-            / self._meas_op_precise.get_op_norm()
-        )
-        if not np.isclose(heu_corr_factor, 1.0) and not self._use_ROP:
-            self._heuristic *= heu_corr_factor
-            if self._verbose:
-                print(
-                    f"INFO: heuristic noise level after correction: {self._heuristic}, ",
-                    f"corection factor {heu_corr_factor}",
-                    flush=True,
-                )
-        # set noise floor level in wavelet domain
-        self._prox_op.set_noise_floor_level(self._heuristic / 3.0)  # 9 wavelet bases
-        if self._verbose:
-            print(
-                f"INFO: estimated noise floor level in wavelet coeeficients: {self._heuristic/3.0}"
-            )
-        if not np.isclose(self._heu_reg_scale, 1.0):
-            self._heuristic *= self._heu_reg_scale
-            if self._verbose:
-                print(
-                    f"INFO: heuristic noise level after scaling: {self._heuristic},",
-                    f"scaling factor {self._heu_reg_scale}",
-                    flush=True,
-                )
         # set soft thresholding value
-        self._prox_op.set_soft_thresholding_value(
-            self._heuristic / 3.0
-        )  # 9 wavelet bases
+        self._regulariser.set_soft_thresholding_value(self._heuristic / 3.0)
 
         # initialise weighting for the l1 norm
-        self._prox_op.update(self._model, initialisation=True)
+        self._regulariser.update(self._model)
 
         # other parameters
         self._model_prev_re = self._model
@@ -155,13 +138,15 @@ class FBSARA(ForwardBackward):
         self._iter_outer = 0
         self._reweighting_flag = False
 
-        if self._verbose:
+        if self._is_distributed:
+            dist.barrier()
+        if self._verbose and self._rank == 0:
             print(f"INFO: forward-backward step size (gamma): {self._gd_step_size}")
             print(
                 f"INFO: regularization parameter (lambda): {self._heuristic/3.0/self._gd_step_size}"
             )
             print(f"INFO: heuristic soft threolding level: {self._heuristic/3.0}")
-            if isinstance(self._meas_op, MeasOpPSF):
+            if self._use_approx_meas_op:
                 print(
                     "INFO: use approximate measurement operator for reconstruction",
                     flush=True,
@@ -169,6 +154,8 @@ class FBSARA(ForwardBackward):
             print("\n*************************************************", flush=True)
             print("********* STARTING ALGORITHM:   uSARA   *********", flush=True)
             print("*************************************************", flush=True)
+        if self._is_distributed:
+            dist.barrier()
 
     def _each_iter_begin(self) -> None:
         """
@@ -200,13 +187,16 @@ class FBSARA(ForwardBackward):
             bool: Whether the stop criteria is met.
         """
         # img relative variation
-        self._im_rel_var = (
-            torch.linalg.vector_norm(self._model - self._model_prev)
-            / (torch.linalg.vector_norm(self._model) + 1e-10)
-        ).item()
+        model_norm = torch.sum(self._model**2)
+        model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
+        # gather norms from all ranks
+        if self._is_distributed:
+            dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
+            dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
+        self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
         # log
-        if self._verbose:
+        if self._verbose and self._rank == 0:
             print(
                 f"Cumulative itr: {self._iter+1},  re-weighting itr: {self._iter_outer+1},",
                 f"forward-backward itr: {self._iter_inner+1},",
@@ -224,14 +214,15 @@ class FBSARA(ForwardBackward):
         ) or self._iter_inner + 1 >= self._im_max_itr_inner:
             self._t_iter_outer = timer() - self._t_iter_outer
             self._reweighting_flag = True
-            # img relative variation reweighting loop
-            self._im_rel_var_outer = (
-                torch.linalg.vector_norm(self._model - self._model_prev_re)
-                / (torch.linalg.vector_norm(self._model) + 1e-10)
+            model_diff_norm = torch.sum((self._model - self._model_prev_re) ** 2)
+            if self._is_distributed:
+                dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
+            self._im_rel_var_outer = torch.sqrt(
+                model_diff_norm / (model_norm + 1e-12)
             ).item()
             self._model_prev_re = self._model
             # log
-            if self._verbose:
+            if self._verbose and self._rank == 0:
                 print(
                     "************************** Major cycle",
                     f"{self._iter_outer+1} finished **************************",
@@ -266,9 +257,9 @@ class FBSARA(ForwardBackward):
         """
         if self._reweighting_flag:
             # update l1 weighting
-            self._prox_op.update(self._model)
+            self._regulariser.update(self._model)
 
-            if self._verbose:
+            if self._verbose and self._rank == 0:
                 print(
                     "INFO: The std of the residual dirty image",
                     f"{np.std(self.get_residual_image()/self._psf_peak).item()}",
@@ -277,28 +268,31 @@ class FBSARA(ForwardBackward):
 
             # save intermediate results
             if self._reweight_save:
-                fits.writeto(
-                    os.path.join(
-                        self._save_pth,
-                        self._file_prefix
-                        + "tmp_model_major_itr_"
-                        + str(self._iter_outer + 1)
-                        + ".fits",
-                    ),
-                    self.get_model_image(dtype=torch.float32),
-                    overwrite=True,
-                )
-                fits.writeto(
-                    os.path.join(
-                        self._save_pth,
-                        self._file_prefix
-                        + "tmp_residual_major_itr_"
-                        + str(self._iter_outer + 1)
-                        + ".fits",
-                    ),
-                    self.get_residual_image(dtype=torch.float32) / self._psf_peak,
-                    overwrite=True,
-                )
+                model_full_np = self.get_model_image(dtype=torch.float32)
+                residual_full_np = self.get_residual_image(dtype=torch.float32)
+                if self._rank == 0:
+                    fits.writeto(
+                        os.path.join(
+                            self._save_pth,
+                            self._file_prefix
+                            + "tmp_model_major_itr_"
+                            + str(self._iter_outer + 1)
+                            + ".fits",
+                        ),
+                        model_full_np,
+                        overwrite=True,
+                    )
+                    fits.writeto(
+                        os.path.join(
+                            self._save_pth,
+                            self._file_prefix
+                            + "tmp_residual_major_itr_"
+                            + str(self._iter_outer + 1)
+                            + ".fits",
+                        ),
+                        residual_full_np,
+                        overwrite=True,
+                    )
 
             self._iter_inner = 0
             self._iter_outer += 1
@@ -315,7 +309,7 @@ class FBSARA(ForwardBackward):
         the process if verbose mode is on, and saves the final model and
         residual images in FITS format.
         """
-        if self._verbose:
+        if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
@@ -324,30 +318,36 @@ class FBSARA(ForwardBackward):
                 f"total number of iterations {self._iter + 1}",
                 flush=True,
             )
-            print(
-                "INFO: The std of the normalised residual dirty image",
-                f"{np.std(self.get_residual_image()/self._psf_peak).item()}",
-                flush=True,
-            )
 
         # save final images
-        fits.writeto(
-            os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
-            self.get_model_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth, self._file_prefix + "residual_dirty_image.fits"
-            ),
-            self.get_residual_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth,
-                self._file_prefix + "normalised_residual_dirty_image.fits",
-            ),
-            self.get_residual_image() / self._psf_peak,
-            overwrite=True,
-        )
+        model_full_np = self.get_model_image()
+        residual_full_np = self.get_residual_image()
+        if self._rank == 0:
+            fits.writeto(
+                os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
+                model_full_np,
+                overwrite=True,
+            )
+            fits.writeto(
+                os.path.join(
+                    self._save_pth, self._file_prefix + "residual_dirty_image.fits"
+                ),
+                residual_full_np,
+                overwrite=True,
+            )
+
+            # generate spectral index map if applicable
+            if model_full_np.shape[1] > 1:
+                result_spec_idx = get_spec_idx(
+                    model_full_np,
+                    self._ch_freq.cpu().numpy().squeeze(),
+                    threshold=self._spec_idx_prec,
+                )
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth, self._file_prefix + "spectral_index_map.fits"
+                    ),
+                    result_spec_idx,
+                    overwrite=True,
+                )
+

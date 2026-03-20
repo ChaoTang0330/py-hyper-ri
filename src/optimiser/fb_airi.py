@@ -3,17 +3,16 @@ Unconstrained AIRI, built on forward-backward algorithm
 """
 
 import os
-from typing import Union
+from typing import Optional
+
 import torch
-import numpy as np
+import torch.distributed as dist
 from astropy.io import fits
 
 from .forward_backward import ForwardBackward
-from ..prox_operator import ProxOpAIRI
-from ..ri_measurement_operator.pysrc.measOperator import MeasOpNUFFT
-from ..ri_measurement_operator.pysrc.measOperator.meas_op_PSF import (
-    MeasOpPSF,
-)
+from ..regulariser import DenAIRI
+from ..ri_measurement_operator import MeasOpHyperspectral
+from ..utils.spectral_index import get_spec_idx
 
 
 class FBAIRI(ForwardBackward):
@@ -27,13 +26,14 @@ class FBAIRI(ForwardBackward):
     def __init__(
         self,
         meas: torch.Tensor,
-        meas_op: MeasOpNUFFT,
-        prox_op: ProxOpAIRI,
-        meas_op_approx: Union[MeasOpPSF, None] = None,
+        meas_op: MeasOpHyperspectral,
+        regulariser: DenAIRI,
+        rank_ch_start: int = 0,
+        meas_op_approx: Optional[MeasOpHyperspectral] = None,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
-        im_peak_est: Union[float, None] = None,
+        im_peak_est: Optional[float] = None,
         heu_noise_scale: float = 1.0,
         adapt_net_select: bool = True,
         peak_tol_min: float = 1e-3,
@@ -49,9 +49,9 @@ class FBAIRI(ForwardBackward):
 
         Args:
             meas (torch.Tensor): The measurement tensor.
-            meas_op (MeasOpTkbnRI): The measurement operator.
-            prox_op (ProxOpAIRI): The proximal operator.
-            meas_op_approx (Union[MeasOpPSF, None], optional): The approximate measurement
+            meas_op (MeasOpHyperspectral): The measurement operator.
+            regulariser (DenAIRI): The denoising operator.
+            meas_op_approx (Union[MeasOpHyperspectral, None], optional): The approximate measurement
                 operator build on oversampled PSF. The AIRI algorithm will use this operator
                 for reconstruction if it is not None. Defaults to None.
             im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
@@ -72,17 +72,19 @@ class FBAIRI(ForwardBackward):
         super().__init__(
             meas,
             meas_op if meas_op_approx is None else meas_op_approx,
-            meas_op,
-            prox_op,
+            regulariser,
+            meas_op_precise=meas_op,
+            heu_noise_scale=heu_noise_scale,
             im_max_itr=im_max_itr,
             save_pth=save_pth,
             file_prefix=file_prefix,
+            rank_ch_start=rank_ch_start,
         )
 
+        self._use_approx_meas_op = meas_op_approx is not None
         self._im_min_itr = im_min_itr
         self._im_var_tol = im_var_tol
         self._im_peak_est = im_peak_est
-        self._heu_noise_scale = heu_noise_scale
         self._adapt_net_select = adapt_net_select
         self._peak_tol_min = peak_tol_min
         self._peak_tol = peak_tol_max
@@ -91,8 +93,7 @@ class FBAIRI(ForwardBackward):
         self._verbose = verbose
         self._iter_save = iter_save
 
-        self._prev_peak_val = 1.0
-        self._heuristic = 1.0
+        self._prev_peak_val = None
         self._im_rel_var = 1.0
 
     def initialisation(self) -> None:
@@ -103,63 +104,30 @@ class FBAIRI(ForwardBackward):
         heuristic noise level, initialises the AIRI proximal operator, and prints
         some information if verbose is True.
         """
+        if self._is_distributed:
+            dist.barrier()
+        if self._rank == 0 and self._verbose:
+            print("\nINFO: Initialisation AIRI optimiser...", flush=True)
+
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
         # estimate peak value
-        if self._im_peak_est is None:
-            self._prev_peak_val = self._meas_bp.max().item() / self._psf_peak
-            if self._verbose:
-                print(
-                    "INFO: use normalised dirty peak as estimated",
-                    f"image peak value: {self._prev_peak_val}",
-                    flush=True,
-                )
-        else:
-            self._prev_peak_val = self._im_peak_est
-            if self._verbose:
-                print(
-                    f"\nINFO: user specified the estimated image peak value: {self._prev_peak_val}",
-                    flush=True,
-                )
+        self._estimate_channel_wise_peak_val()
 
         # heuristic noise level
-        self._heuristic = 1 / np.sqrt(2 * self._meas_op_precise.get_op_norm())
-        if self._verbose:
-            print(
-                f"INFO: measurement operator norm {self._meas_op_precise.get_op_norm()}",
-                flush=True,
-            )
-            print(f"INFO: heuristic noise level: {self._heuristic}", flush=True)
-        heu_corr_factor = np.sqrt(
-            self._meas_op_precise.get_op_norm_prime()
-            / self._meas_op_precise.get_op_norm()
-        )
-        if not np.isclose(heu_corr_factor, 1.0):
-            self._heuristic *= heu_corr_factor
-            if self._verbose:
-                print(
-                    f"INFO: heuristic noise level after correction: {self._heuristic},",
-                    f"corection factor {heu_corr_factor}",
-                    flush=True,
-                )
-        if not np.isclose(self._heu_noise_scale, 1.0):
-            self._heuristic *= self._heu_noise_scale
-            if self._verbose:
-                print(
-                    f"INFO: heuristic noise level after scaling: {self._heuristic},",
-                    f"scaling factor {self._heu_noise_scale}",
-                    flush=True,
-                )
+        self._calculate_channel_wise_heuristic()
 
         # initialise AIRI prox
-        self._peak_val_range = self._prox_op.update(
+        self._peak_val_range = self._regulariser.update(
             self._heuristic, self._prev_peak_val
         )
 
-        if self._verbose:
+        if self._is_distributed:
+            dist.barrier()
+        if self._verbose and self._rank == 0:
             print(f"INFO: forward-backward step size: {self._gd_step_size}", flush=True)
-            if isinstance(self._meas_op, MeasOpPSF):
+            if self._use_approx_meas_op:
                 print(
                     "INFO: use approximate measurement operator for reconstruction",
                     flush=True,
@@ -167,6 +135,47 @@ class FBAIRI(ForwardBackward):
             print("\n*************************************************", flush=True)
             print("********* STARTING ALGORITHM:    AIRI   *********", flush=True)
             print("*************************************************", flush=True)
+        if self._is_distributed:
+            dist.barrier()
+
+    def _estimate_channel_wise_peak_val(self) -> None:
+        """
+        Estimates the peak value for each channel from the dirty image if the user does not
+        specify it.
+
+        The estimated peak value is saved in the attribute `_prev_peak_val`, which is a tensor
+        of shape (1, C, 1, 1).
+        """
+        if self._im_peak_est is None:
+            self._prev_peak_val = (
+                self._meas_bp.amax(dim=(2, 3), keepdim=True) / self._psf_peak
+            )
+            if self._verbose:
+                if self._rank == 0:
+                    print("\nINFO: use normalised dirty peak as estimated", flush=True)
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"estimated image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
+        else:
+            self._prev_peak_val = self._im_peak_est
+            if self._verbose:
+                if self._rank == 0:
+                    print(
+                        "INFO: user specified the estimated image peak value",
+                        flush=True,
+                    )
+                if self._is_distributed:
+                    dist.barrier()
+                print(
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                    f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    flush=True,
+                )
 
     def _each_iter_begin(self):
         """
@@ -187,12 +196,16 @@ class FBAIRI(ForwardBackward):
             bool: True if the stop criteria are met, False otherwise.
         """
         # img relative variation
-        self._im_rel_var = torch.linalg.vector_norm(self._model - self._model_prev) / (
-            torch.linalg.vector_norm(self._model) + 1e-10
-        )
+        model_norm = torch.sum(self._model**2)
+        model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
+        # gather norms from all ranks
+        if self._is_distributed:
+            dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
+            dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
+        self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
         # log
-        if self._verbose:
+        if self._verbose and self._rank == 0:
             print(
                 f"\nIter {self._iter+1}: relative variation {self._im_rel_var}",
                 f"\ntimings: gradient step {self._t_forward} sec,",
@@ -217,47 +230,68 @@ class FBAIRI(ForwardBackward):
         """
         # save intermediate results
         if (self._iter + 1) % self._iter_save == 0:
-            fits.writeto(
-                os.path.join(
-                    self._save_pth,
-                    self._file_prefix
-                    + "tmp_model_itr_"
-                    + str(self._iter + 1)
-                    + ".fits",
-                ),
-                self.get_model_image(dtype=torch.float32),
-                overwrite=True,
-            )
-            fits.writeto(
-                os.path.join(
-                    self._save_pth,
-                    self._file_prefix
-                    + "tmp_residual_itr_"
-                    + str(self._iter + 1)
-                    + ".fits",
-                ),
-                self.get_residual_image(dtype=torch.float32) / self._psf_peak,
-                overwrite=True,
-            )
+            model_full_np = self.get_model_image(dtype=torch.float32)
+            residual_full_np = self.get_residual_image(dtype=torch.float32)
+            if self._rank == 0:
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth,
+                        self._file_prefix
+                        + "tmp_model_itr_"
+                        + str(self._iter + 1)
+                        + ".fits",
+                    ),
+                    model_full_np,
+                    overwrite=True,
+                )
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth,
+                        self._file_prefix
+                        + "tmp_residual_itr_"
+                        + str(self._iter + 1)
+                        + ".fits",
+                    ),
+                    residual_full_np / self._psf_peak,
+                    overwrite=True,
+                )
 
         # AIRI denoiser selection
         if self._adapt_net_select:
-            curr_peak_val = self._model.max().item()
-            peak_var = abs(curr_peak_val - self._prev_peak_val) / self._prev_peak_val
+            curr_peak_val = self._model.amax(dim=(2, 3), keepdim=True)
+            peak_var = (
+                torch.abs(curr_peak_val - self._prev_peak_val) / self._prev_peak_val
+            )
+            peak_var_max = peak_var.max()
+            if self._is_distributed:
+                dist.all_reduce(peak_var_max, op=dist.ReduceOp.MAX)
+            peak_var_max = peak_var_max.item()
             if self._verbose:
-                print(
-                    f"  Model image peak value {curr_peak_val}, relative variation = {peak_var}",
-                    flush=True,
-                )
+                curr_peak_val_full = self._gather_ch_img_to_tensor(curr_peak_val)
+                if self._rank == 0:
+                    curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
+                    curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
+                    print(
+                        f"  Model image peak value: ch 1 {curr_peak_val_ch_1:.3f}, "
+                        f"ch end {curr_peak_val_ch_end:.3f}, "
+                        f"max relative variation = {peak_var_max:.3e}",
+                        flush=True,
+                    )
 
-            if peak_var < self._peak_tol and (
-                curr_peak_val < self._peak_val_range[0]
-                or curr_peak_val > self._peak_val_range[1]
-            ):
-                self._peak_val_range = self._prox_op.update(
-                    self._heuristic, self._prev_peak_val
-                )
+            peak_out_of_range = torch.logical_or(
+                curr_peak_val < self._peak_val_range[0],
+                curr_peak_val > self._peak_val_range[1],
+            )
+
             self._prev_peak_val = curr_peak_val
+            if peak_var_max < self._peak_tol and torch.any(peak_out_of_range):
+                self._peak_tol = max(
+                    self._peak_tol * self._peak_tol_step, self._peak_tol_min
+                )
+                self._peak_val_range = self._regulariser.update(
+                    ch_heuristic=self._heuristic,
+                    ch_peak_est=self._prev_peak_val,
+                )
 
     @torch.no_grad()
     def finalisation(self) -> None:
@@ -278,23 +312,33 @@ class FBAIRI(ForwardBackward):
             )
 
         # save final results
-        fits.writeto(
-            os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
-            self.get_model_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth, self._file_prefix + "residual_dirty_image.fits"
-            ),
-            self.get_residual_image(),
-            overwrite=True,
-        )
-        fits.writeto(
-            os.path.join(
-                self._save_pth,
-                self._file_prefix + "normalised_residual_dirty_image.fits",
-            ),
-            self.get_residual_image() / self._psf_peak,
-            overwrite=True,
-        )
+        model_full_np = self.get_model_image()
+        residual_full_np = self.get_residual_image()
+        if self._rank == 0:
+            fits.writeto(
+                os.path.join(self._save_pth, self._file_prefix + "model_image.fits"),
+                model_full_np,
+                overwrite=True,
+            )
+            fits.writeto(
+                os.path.join(
+                    self._save_pth, self._file_prefix + "residual_dirty_image.fits"
+                ),
+                residual_full_np,
+                overwrite=True,
+            )
+
+            # generate spectral index map if applicable
+            if model_full_np.shape[1] > 1:
+                result_spec_idx = get_spec_idx(
+                    model_full_np,
+                    self._ch_freq.cpu().numpy().squeeze(),
+                    threshold=self._spec_idx_prec,
+                )
+                fits.writeto(
+                    os.path.join(
+                        self._save_pth, self._file_prefix + "spectral_index_map.fits"
+                    ),
+                    result_spec_idx,
+                    overwrite=True,
+                )

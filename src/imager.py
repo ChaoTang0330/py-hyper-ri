@@ -6,8 +6,6 @@ from typing import Dict
 
 import torch
 import torch.distributed as dist
-# import numpy as np
-# from astropy.io import fits
 
 from .interface.io import env_int
 from .regulariser import ProxSARAPos
@@ -16,10 +14,10 @@ from .regulariser import DenAIRI, DenHyperAIRI
 from .optimiser import FBSARA
 from .optimiser import FBAIRI, PDAIRI, FBHyperAIRI
 
-# from .utils import gen_imaging_weight
 from .interface.load_data import load_data_to_tensor
 from .ri_measurement_operator import MeasOpFinufft, MeasOpTkbn, MeasOpPSF
 from .ri_measurement_operator import MeasOpHyperspectral
+
 
 def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> None:
     """
@@ -116,7 +114,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
     elif param_measop["meas_op_type"] == "tkbn":
         MeasOpClass = MeasOpTkbn
     else:
-        raise ValueError(f"Unsupported measurement operator type: {param_measop['meas_op_type']}")
+        raise ValueError(
+            f"Unsupported measurement operator type: {param_measop['meas_op_type']}"
+        )
 
     meas_op = MeasOpHyperspectral(
         u=data["u"],
@@ -290,7 +290,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         # spec_update_tol_step: float = 0.5,
 
     else:
-        raise NotImplementedError(f"Unsupported algorithm: {param_optimiser['algorithm']}")
+        raise NotImplementedError(
+            f"Unsupported algorithm: {param_optimiser['algorithm']}"
+        )
 
     # imaging
     if param_optimiser["flag_imaging"]:
@@ -300,17 +302,20 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
         # run imaging loop
         optimiser.run()
-        
+
         # finalisation
         optimiser.finalisation()
 
         dist.barrier()
-        print(
-            f"INFO: rank {param_comm['rank']}: The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
-            flush=True,
-        )
+        if param_optimiser["verbose"] and torch.cuda.is_available():
+            print(
+                f"INFO: rank {param_comm['rank']}: "
+                f"The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
+                flush=True,
+            )
 
     # clsoing down torch.distributed
-    torch.cuda.synchronize()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
     dist.barrier()
     dist.destroy_process_group()

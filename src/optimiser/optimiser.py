@@ -3,12 +3,13 @@ Base class for optimisers
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, List, Optional
+
 import torch
 import torch.distributed as dist
 import numpy as np
 
-from ..ri_measurement_operator.pysrc.measOperator import MeasOp
+from ..ri_measurement_operator import MeasOp
 
 
 class Optimiser(ABC):
@@ -21,11 +22,11 @@ class Optimiser(ABC):
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         meas_op: MeasOp,
         save_pth: str = "results",
         file_prefix: str = "",
-        ch_start: int = 0,
+        rank_ch_start: int = 0,
     ) -> None:
         """
         General initialization of the Optimiser.
@@ -42,18 +43,16 @@ class Optimiser(ABC):
         if isinstance(meas, torch.Tensor):
             self._meas = meas.to(self._meas_op.get_data_type_meas())
         else:
-            self._meas = tuple(
-                m.to(self._meas_op.get_data_type_meas()) for m in meas
-            )
+            self._meas = tuple(m.to(self._meas_op.get_data_type_meas()) for m in meas)
         self._save_pth = save_pth
         self._file_prefix = file_prefix
-        self._num_ch_rank = 1 if isinstance(meas, torch.Tensor) else len(meas)
-        self._ch_start = ch_start
+        self._rank_ch_num = len(meas)
+        self._rank_ch_start = rank_ch_start
 
         # common initialisation
         self._meas_bp = torch.zeros(
             1,
-            self._num_ch_rank,
+            self._rank_ch_num,
             *self._meas_op.get_img_size(),
             device=self._meas_op.get_device(),
             dtype=self._meas_op.get_data_type()
@@ -66,23 +65,23 @@ class Optimiser(ABC):
         self._is_distributed = dist.is_available() and dist.is_initialized()
         self._rank = dist.get_rank() if self._is_distributed else 0
         self._world_size = dist.get_world_size() if self._is_distributed else 1
-        self._num_ch_each_rank = (self._num_ch_rank,)
+        self._ch_num_each_rank = (self._rank_ch_num,)
         if self._is_distributed:
-            num_ch_each_rank_tensor = torch.zeros(
+            ch_num_each_rank_tensor = torch.zeros(
                 self._world_size,
                 dtype=torch.int64,
                 device=self._meas_op.get_device(),
             )
             dist.all_gather_into_tensor(
-                num_ch_each_rank_tensor,
+                ch_num_each_rank_tensor,
                 torch.tensor(
-                    [self._num_ch_rank],
+                    [self._rank_ch_num],
                     dtype=torch.int64,
                     device=self._meas_op.get_device(),
                 ),
             )
-            self._num_ch_each_rank = tuple(
-                num_ch_each_rank_tensor.cpu().numpy().tolist()
+            self._ch_num_each_rank = tuple(
+                ch_num_each_rank_tensor.cpu().numpy().tolist()
             )
 
     @abstractmethod
@@ -186,7 +185,7 @@ class Optimiser(ABC):
 
     def get_dirty_image(
         self, normalise=None, dtype=torch.double, dest: int = 0
-    ) -> np.ndarray:
+    ) -> Optional[np.ndarray]:
         """
         Get the dirty image.
 
@@ -205,7 +204,9 @@ class Optimiser(ABC):
             return None
         return dirty_full.squeeze().cpu().to(dtype).numpy()
 
-    def get_residual_image(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
+    def get_residual_image(
+        self, dtype=torch.double, dest: int = 0
+    ) -> Optional[np.ndarray]:
         """
         Get the residual image.
 
@@ -231,26 +232,26 @@ class Optimiser(ABC):
         self,
         tensor_ch_rank: torch.Tensor,
         dest: int = 0,
-    ) -> torch.Tensor:
+    ) -> Optional[torch.Tensor]:
         """
         Gather tensors have different number of channels from all ranks to the tensor at destination rank.
         Args:
-            tensor_ch_rank (torch.Tensor): Tensor on each rank with shape (1, num_ch_rank, H, W).
+            tensor_ch_rank (torch.Tensor): Tensor on each rank with shape (1, rank_ch_num, H, W).
         Returns:
-            torch.Tensor: Gathered tensor on the destination rank with shape (1, total_num_ch, H, W)
+            torch.Tensor: Gathered tensor on the destination rank with shape (1, total_ch_num, H, W)
                 at the destination rank, None on other ranks.
         """
         if self._world_size <= 1:
             return tensor_ch_rank
 
-        max_num_ch = max(self._num_ch_each_rank)
-        if tensor_ch_rank.shape[1] < max_num_ch:
+        max_ch_num = max(self._ch_num_each_rank)
+        if tensor_ch_rank.shape[1] < max_ch_num:
             tensor_pad = torch.cat(
                 [
                     tensor_ch_rank,
                     tensor_ch_rank.new_zeros(
                         1,
-                        max_num_ch - tensor_ch_rank.shape[1],
+                        max_ch_num - tensor_ch_rank.shape[1],
                         tensor_ch_rank.shape[2],
                         tensor_ch_rank.shape[3],
                     ),
@@ -270,7 +271,7 @@ class Optimiser(ABC):
             return None
         tensor_full = torch.cat(
             [
-                gather_list[r][:, : self._num_ch_each_rank[r], :, :]
+                gather_list[r][:, : self._ch_num_each_rank[r], :, :]
                 for r in range(self._world_size)
             ],
             dim=1,

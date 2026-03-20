@@ -23,7 +23,7 @@ class ProxEllipsoid(Regulariser):
         self,
         center: List[torch.Tensor],
         precond_weight: Optional[List[torch.Tensor]] = None,
-        radius: Optional[List[float]] = None,
+        radius: Optional[torch.Tensor] = None,
         itr_min: int = 1,
         itr_max: int = 10,
         rel_var_tol: float = 1e-6,
@@ -38,7 +38,7 @@ class ProxEllipsoid(Regulariser):
             center (List[torch.Tensor]): The center of the elipse.
             precond_weight (Optional[List[torch.Tensor]], optional): The preconditioning weight.
                 Defaults to None, which means no preconditioning.
-            radius (Optional[List[float]], optional): The radius of the elipse.
+            radius (Optional[torch.Tensor], optional): The radius of the elipse.
                 Defaults to None, which means no projection.
             itr_min (int, optional): The minimum number of iterations for the forward-backward algorithm.
                 Defaults to 1.
@@ -74,11 +74,15 @@ class ProxEllipsoid(Regulariser):
         if radius is None:
             # The theoretical l2 error bounds are used as the default radius of the \ell_2 ball,
             # assume chi-square distribution and tau=1
-            radius = [
+            radius = torch.tensor([
                 math.sqrt(torch.numel(c) + 2.0 * math.sqrt(torch.numel(c)))
                 for c in center
-            ]
-        self._radius = tuple(radius)
+            ])
+        if self._dtype in (torch.float64, torch.complex128):
+            radius_dtype = torch.float64
+        else:
+            radius_dtype = torch.float32
+        self._radius = radius.to(device=self._device, dtype=radius_dtype)
 
         # initialisation
         self._prev = [torch.zeros_like(c) for c in self._center]
@@ -147,9 +151,10 @@ class ProxEllipsoid(Regulariser):
         """
         for i in range(self._rank_num_ch):
             x[i] -= self._center[i]
+            x_i_norm = torch.linalg.vector_norm(x[i])
             x[i] *= torch.minimum(
-                self._radius[i] / torch.linalg.vector_norm(x[i]),
-                torch.ones(1, device=self._device, dtype=self._dtype),
+                self._radius[i] / x_i_norm,
+                torch.ones_like(x_i_norm),
             )
             x[i] += self._center[i]
         return x

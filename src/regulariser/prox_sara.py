@@ -324,7 +324,7 @@ class ProxSARAPos(Regulariser):
         Args:
             wl_noise_floor (float): The noise floor level to set.
         """
-        self._wl_noise_floor = wl_noise_floor.view(1, self._rank_num_ch, 1, 1).to(
+        self._wl_noise_floor = wl_noise_floor.reshape(1, self._rank_num_ch, 1, 1).to(
             device=self._device, dtype=self._dtype
         )
 
@@ -335,6 +335,6 @@ class ProxSARAPos(Regulariser):
         Args:
             sfth_val (float): The soft thresholding level for the wavelet coefficients.
         """
-        self._sfth_val = sfth_val.view(1, self._rank_num_ch, 1, 1).to(
+        self._sfth_val = sfth_val.reshape(1, self._rank_num_ch, 1, 1).to(
             device=self._device, dtype=self._dtype
         )

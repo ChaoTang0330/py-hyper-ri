@@ -1,3 +1,6 @@
+"""
+This module contains the function to load data from files and convert them to torch tensors.
+"""
 
 import os
 import glob
@@ -246,7 +249,9 @@ def load_data_to_tensor(
         if data_ch and "weightsNat" in data_ch:
             natural_weight_physical.append(data_ch["weightsNat"])
             if natural_weight_physical[-1].size == 1:
-                natural_weight_physical[-1] = natural_weight_physical[-1].item() * np.ones_like(u_physical[-1])
+                natural_weight_physical[-1] = natural_weight_physical[
+                    -1
+                ].item() * np.ones_like(u_physical[-1])
         else:
             natural_weight_physical.append(np.ones_like(u_physical[-1]))
 
@@ -321,7 +326,7 @@ def load_data_to_tensor(
         data["imaging_weight"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["y"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
 
-        for ch_physical in range(sum(ch_partition[:ch]), sum(ch_partition[:ch + 1])):
+        for ch_physical in range(sum(ch_partition[:ch]), sum(ch_partition[: ch + 1])):
             # convert u,v,w to radians and save in torch tensor
             data["u"][ch] = torch.cat(
                 (
@@ -428,20 +433,24 @@ def load_data_to_tensor(
                 "INFO: imaging weights will not be applied.",
                 verbose_general and ch == 0,
             )
-        
+
         # calculate preconditioning weights if needed
         if precond_weighting:
             verbose_print(
-                "INFO: computing preconditioning weights...", verbose_general and ch == 0
+                "INFO: computing preconditioning weights...",
+                verbose_general and ch == 0,
             )
-            data["precond_weight"][ch] = gen_imaging_weights(
-                data["u"][ch].clone(),
-                data["v"][ch].clone(),
-                data["natural_weight"][ch].clone(),
-                img_size,
-                weight_type=precond_weight_type,
-                weight_gridsize=precond_weight_gridsize,
-            ).to(device=device, dtype=dtype)
+            data["precond_weight"][ch] = (
+                gen_imaging_weights(
+                    data["u"][ch].clone(),
+                    data["v"][ch].clone(),
+                    data["natural_weight"][ch].clone(),
+                    img_size,
+                    weight_type=precond_weight_type,
+                    weight_gridsize=precond_weight_gridsize,
+                ).to(device=device, dtype=dtype)
+                ** 2
+            )
         else:
             verbose_print(
                 "INFO: preconditioning weights will not be generated.",

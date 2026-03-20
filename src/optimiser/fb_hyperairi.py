@@ -28,8 +28,8 @@ class FBHyperAIRI(ForwardBackward):
         meas: torch.Tensor,
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
-        prox_op: DenHyperAIRI,
-        ch_start: int = 0,
+        regulariser: DenHyperAIRI,
+        rank_ch_start: int = 0,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
@@ -57,7 +57,7 @@ class FBHyperAIRI(ForwardBackward):
         Args:
             meas (torch.Tensor): The measurement tensor.
             meas_op (MeasOpHyperspectral): The measurement operator.
-            prox_op (DenHyperAIRI): The denoising operator.
+            regulariser (DenHyperAIRI): The denoising operator.
             im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
             im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
             im_var_tol (float, optional): The tolerance for image variation. Defaults to 1e-4.
@@ -86,11 +86,12 @@ class FBHyperAIRI(ForwardBackward):
         super().__init__(
             meas,
             meas_op,
-            prox_op,
+            regulariser,
+            heu_noise_scale=heu_noise_scale,
             im_max_itr=im_max_itr,
             save_pth=save_pth,
             file_prefix=file_prefix,
-            ch_start=ch_start,
+            rank_ch_start=rank_ch_start,
         )
 
         self._im_min_itr = im_min_itr
@@ -100,7 +101,6 @@ class FBHyperAIRI(ForwardBackward):
             self._im_peak_est = self._im_peak_est.to(
                 device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
             )
-        self._heu_noise_scale = heu_noise_scale
 
         # network adaptation parameters
         self._adapt_net_select = adapt_net_select
@@ -127,8 +127,7 @@ class FBHyperAIRI(ForwardBackward):
         self._verbose = verbose
         self._iter_save = iter_save
 
-        self._prev_peak_val = 1.0
-        self._heuristic = 1.0
+        self._prev_peak_val = None
         self._im_rel_var = 1.0
 
     @torch.no_grad()
@@ -142,13 +141,61 @@ class FBHyperAIRI(ForwardBackward):
         """
         if self._is_distributed:
             dist.barrier()
-            if self._rank == 0 and self._verbose:
-                print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
+        if self._rank == 0 and self._verbose:
+            print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
 
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
         # estimate peak value
+        self._estimate_channel_wise_peak_val()
+
+        # heuristic noise level of each channel
+        self._calculate_channel_wise_heuristic()
+
+        # fit clean beam to the PSF of the last channel
+        # then broadcast the clean beam to all ranks
+        self._fit_and_broadcast_clean_beam()
+
+        # get the precision threshold for spectral index map fitting
+        self._spec_idx_prec = self._heuristic.min()
+        if self._is_distributed:
+            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+        self._spec_idx_prec = self._spec_idx_prec.item()
+
+        # initialise spectral index map
+        self._initialise_spectral_index_map()
+
+        # initialise HyperAIRI prox
+        if self._verbose:
+            if self._is_distributed:
+                dist.barrier()
+            if self._rank == 0:
+                print("\nINFO: Initialising HyperAIRI proximal operator...", flush=True)
+        self._peak_val_range = self._regulariser.update(
+            ch_heuristic=self._heuristic,
+            ch_peak_est=self._prev_peak_val,
+            spec_idx=self._spec_idx_map,
+        )
+
+        # logging
+        if self._verbose:
+            if self._is_distributed:
+                dist.barrier()
+            if self._rank == 0:
+                print(
+                    f"INFO: forward-backward step size: {self._gd_step_size}",
+                    flush=True,
+                )
+                print("\n*************************************************", flush=True)
+                print("********* STARTING ALGORITHM: HyperAIRI *********", flush=True)
+                print("*************************************************", flush=True)
+
+    def _estimate_channel_wise_peak_val(self) -> None:
+        """
+        Estimates the peak value for each channel from the dirty image if the user does not
+        specify it.
+        """
         if self._im_peak_est is None:
             self._prev_peak_val = (
                 self._meas_bp.amax(dim=(2, 3), keepdim=True) / self._psf_peak
@@ -159,7 +206,7 @@ class FBHyperAIRI(ForwardBackward):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                     f"estimated image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
                     flush=True,
                 )
@@ -174,65 +221,21 @@ class FBHyperAIRI(ForwardBackward):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
+                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
                     f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
                     flush=True,
                 )
 
-        # heuristic noise level of each channel
-        self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op_precise.get_op_norm_ch())
-        if self._verbose:
-            if self._is_distributed:
-                dist.barrier()
-            print(
-                f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
-                f"op norm {self._meas_op_precise.get_op_norm_ch().squeeze().cpu().tolist()}, "
-                f"heuristic noise level {self._heuristic.squeeze().cpu().tolist()}",
-                flush=True,
-            )
+    def _fit_and_broadcast_clean_beam(self) -> None:
+        """
+        Fits the clean beam from the PSF of the last channel and broadcasts it to all ranks.
 
-        heu_corr_factor = torch.sqrt(
-            self._meas_op_precise.get_op_norm_prime_ch()
-            / self._meas_op_precise.get_op_norm_ch()
-        )
-        if not torch.allclose(
-            heu_corr_factor,
-            torch.tensor(
-                1.0,
-                device=heu_corr_factor.device,
-                dtype=heu_corr_factor.dtype,
-            ),
-        ):
-            self._heuristic *= heu_corr_factor
-            if self._verbose:
-                if self._is_distributed:
-                    dist.barrier()
-                print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
-                    f"heuristic noise level after correction: {self._heuristic.squeeze().cpu().tolist()}, "
-                    f"correction factor {heu_corr_factor.squeeze().cpu().tolist()}",
-                    flush=True,
-                )
-        if not np.isclose(self._heu_noise_scale, 1.0):
-            self._heuristic *= self._heu_noise_scale
-            if self._verbose:
-                if self._is_distributed:
-                    dist.barrier()
-                if self._rank == 0:
-                    print(
-                        f"INFO: apply user specified heuristic noise scale {self._heu_noise_scale}",
-                        flush=True,
-                    )
-                if self._is_distributed:
-                    dist.barrier()
-                print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._num_ch_rank}, "
-                    f"heuristic noise level after scaling: {self._heuristic.squeeze().cpu().tolist()}",
-                    flush=True,
-                )
+        This method is used when the spectral index map update is enabled, as the clean
+        beam is needed for the spectral index map fitting.
 
-        # prepare clean beam & precision threthold for spectral index map
-        # generate clean beam
+        The result clean beam is saved in the attribute `_clean_beam`, which is a tensor
+        of shape (1, 1, H, W).
+        """
         if self._rank == self._world_size - 1:
             psf_ch_end = self._psf[0, -1, :, :].cpu().numpy()
             self._clean_beam, _, _, _ = fit_clean_beam(
@@ -265,18 +268,18 @@ class FBHyperAIRI(ForwardBackward):
                 )
             dist.broadcast(self._clean_beam, src=self._world_size - 1)
 
-        # get the precision threshold for spectral index map fitting
-        self._spec_idx_prec = self._heuristic.min()
-        if self._is_distributed:
-            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
-        self._spec_idx_prec = self._spec_idx_prec.item()
+    def _initialise_spectral_index_map(self) -> None:
+        """
+        Initializes the spectral index map based on the specified method.
 
-        # calculate init spectral index map
+        The spectral index map is saved in the attribute `_spec_idx_map`, 
+        which is a tensor of shape (1, 1, H, W),
+        """
         if isinstance(self._spec_idx_init, torch.Tensor):
             self._spec_idx_map = self._spec_idx_init.to(
                 device=self._meas_op.get_device(),
                 dtype=self._meas_op.get_data_type(),
-            ).reshape(1, -1, 1, 1)
+            ).reshape(1, 1, *self._model.shape[2:])
         elif self._spec_idx_init == "dirty":
             dirty_normalised_np = self.get_dirty_image(normalise=self._psf_peak, dest=0)
             if self._rank == 0:
@@ -293,7 +296,7 @@ class FBHyperAIRI(ForwardBackward):
                     self._spec_idx_map,
                     device=self._meas_op.get_device(),
                     dtype=self._meas_op.get_data_type(),
-                ).reshape(1, -1, *self._model.shape[2:])
+                ).reshape(1, 1, *self._model.shape[2:])
             else:
                 self._spec_idx_map = torch.empty(
                     (1, 1, self._model.shape[2], self._model.shape[3]),
@@ -308,31 +311,6 @@ class FBHyperAIRI(ForwardBackward):
                 device=self._meas_op.get_device(),
                 dtype=self._meas_op.get_data_type(),
             )
-
-        # initialise HyperAIRI prox
-        if self._verbose:
-            if self._is_distributed:
-                dist.barrier()
-            if self._rank == 0:
-                print("\nINFO: Initialising HyperAIRI proximal operator...", flush=True)
-        self._peak_val_range = self._prox_op.update(
-            ch_heuristic=self._heuristic,
-            ch_peak_est=self._prev_peak_val,
-            spec_idx=self._spec_idx_map,
-        )
-
-        # logging
-        if self._verbose:
-            if self._is_distributed:
-                dist.barrier()
-            if self._rank == 0:
-                print(
-                    f"INFO: forward-backward step size: {self._gd_step_size}",
-                    flush=True,
-                )
-                print("\n*************************************************", flush=True)
-                print("********* STARTING ALGORITHM: HyperAIRI *********", flush=True)
-                print("*************************************************", flush=True)
 
     def _each_iter_begin(self):
         """
@@ -445,7 +423,7 @@ class FBHyperAIRI(ForwardBackward):
                 self._peak_tol = max(
                     self._peak_tol * self._peak_tol_step, self._peak_tol_min
                 )
-                self._peak_val_range = self._prox_op.update(
+                self._peak_val_range = self._regulariser.update(
                     ch_heuristic=self._heuristic,
                     ch_peak_est=self._prev_peak_val,
                 )
@@ -463,7 +441,7 @@ class FBHyperAIRI(ForwardBackward):
                     self._spec_update_tol_min,
                 )
                 spec_idx_map = self._update_spec_idx_map()
-                _ = self._prox_op.update(spec_idx=spec_idx_map)
+                _ = self._regulariser.update(spec_idx=spec_idx_map)
             else:
                 self._spec_update_iter += 1
 
@@ -528,11 +506,11 @@ class FBHyperAIRI(ForwardBackward):
             torch.Tensor: The updated spectral index map.
         """
         # convolve with clean beam
-        img_blur = self._model.view(self._num_ch_rank, 1, *self._model.shape[2:])
+        img_blur = self._model.view(self._rank_ch_num, 1, *self._model.shape[2:])
         img_blur = torch.nn.functional.conv2d(
             img_blur, self._clean_beam, padding="same"
         )
-        img_blur = img_blur.view(1, self._num_ch_rank, *self._model.shape[2:])
+        img_blur = img_blur.view(1, self._rank_ch_num, *self._model.shape[2:])
         img_blur = torch.clamp(img_blur, min=0.0)
 
         # build valid mask
@@ -546,7 +524,7 @@ class FBHyperAIRI(ForwardBackward):
         # log frequency, x
         prec_mask = img_blur < self._spec_idx_prec
         log_ch_freq = torch.log(
-            self._ch_freq[:, self._ch_start : self._ch_start + self._num_ch_rank, :, :]
+            self._ch_freq[:, self._ch_start : self._ch_start + self._rank_ch_num, :, :]
         )
         log_ch_freq = log_ch_freq.expand_as(img_blur)
         log_ch_freq = log_ch_freq.masked_fill(prec_mask, 0.0)
