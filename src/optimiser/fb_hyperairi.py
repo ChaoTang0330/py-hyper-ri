@@ -3,7 +3,7 @@ HyperAIRI, built on forward-backward algorithm
 """
 
 import os
-from typing import Union
+from typing import Union, Optional
 import torch
 import torch.distributed as dist
 import numpy as np
@@ -12,7 +12,7 @@ from astropy.io import fits
 from .forward_backward import ForwardBackward
 from ..regulariser import DenHyperAIRI
 from ..ri_measurement_operator import MeasOpHyperspectral
-from ..utils.spectral_index import fit_clean_beam, get_spec_idx
+from ..interface import fit_clean_beam, get_spec_idx
 
 
 class FBHyperAIRI(ForwardBackward):
@@ -33,7 +33,7 @@ class FBHyperAIRI(ForwardBackward):
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
-        im_peak_est: Union[torch.Tensor, None] = None,
+        im_peak_est: Optional[torch.Tensor] = None,
         heu_noise_scale: float = 1.0,
         adapt_net_select: bool = True,
         peak_tol_min: float = 1e-3,
@@ -85,6 +85,7 @@ class FBHyperAIRI(ForwardBackward):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op,
             regulariser,
             heu_noise_scale=heu_noise_scale,
@@ -100,7 +101,7 @@ class FBHyperAIRI(ForwardBackward):
         if self._im_peak_est is not None:
             self._im_peak_est = self._im_peak_est.to(
                 device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
-            )
+            ).view(1, -1, 1, 1)
 
         # network adaptation parameters
         self._adapt_net_select = adapt_net_select
@@ -112,9 +113,6 @@ class FBHyperAIRI(ForwardBackward):
         # spectral index map update parameters
         self._spec_idx_init = spec_idx_init
         self._spec_update = spec_update
-        self._ch_freq = ch_freq.to(
-            device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
-        ).view(1, -1, 1, 1)
         self._spec_max_update_count = spec_max_update_count
         self._spec_max_update_interval = spec_max_update_interval
         self._spec_update_tol = spec_update_tol_max
@@ -145,7 +143,7 @@ class FBHyperAIRI(ForwardBackward):
             print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
 
         # step size
-        self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
+        self._gd_step_size = 1.98 / self._meas_op.get_op_norm()
 
         # estimate peak value
         self._estimate_channel_wise_peak_val()
@@ -272,7 +270,7 @@ class FBHyperAIRI(ForwardBackward):
         """
         Initializes the spectral index map based on the specified method.
 
-        The spectral index map is saved in the attribute `_spec_idx_map`, 
+        The spectral index map is saved in the attribute `_spec_idx_map`,
         which is a tensor of shape (1, 1, H, W),
         """
         if isinstance(self._spec_idx_init, torch.Tensor):
@@ -308,6 +306,9 @@ class FBHyperAIRI(ForwardBackward):
         else:
             self._spec_idx_map = torch.zeros(
                 1,
+                1,
+                self._model.shape[2],
+                self._model.shape[3],
                 device=self._meas_op.get_device(),
                 dtype=self._meas_op.get_data_type(),
             )
@@ -458,7 +459,7 @@ class FBHyperAIRI(ForwardBackward):
         """
         if self._is_distributed:
             dist.barrier()
-        torch.cuda.synchronize()
+
         if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)

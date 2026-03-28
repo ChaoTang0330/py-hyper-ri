@@ -6,7 +6,7 @@ import os
 from timeit import default_timer as timer
 
 import torch
-from torch.distributed import dist
+import torch.distributed as dist
 import numpy as np
 from astropy.io import fits
 
@@ -28,6 +28,7 @@ class PrimalDualPrecond(Optimiser):
     def __init__(
         self,
         meas: torch.Tensor,
+        ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser_prime: Regulariser,
         regulariser_dual_data: ProxEllipsoid,
@@ -42,6 +43,7 @@ class PrimalDualPrecond(Optimiser):
 
         Args:
             meas (torch.Tensor): The measurement tensor.
+            ch_freq (torch.Tensor): The frequency of each channel.
             meas_op (MeasOp): The measurement operator.
             regulariser_prime (ProxOp): The proximal operator for the prime variable.
             regulariser_dual_data (ProxOpElipse): The proximal operator for the dual data.
@@ -52,6 +54,7 @@ class PrimalDualPrecond(Optimiser):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op,
             save_pth=save_pth,
             file_prefix=file_prefix,
@@ -82,10 +85,10 @@ class PrimalDualPrecond(Optimiser):
             self._cuda_timing = True
 
         # save dirty image and psf
-        self._meas_bp = self._meas_op_precise.adjoint_op(self._meas).to(
-            self._meas_op_precise.get_device()
+        self._meas_bp = self._meas_op.adjoint_op(self._meas).to(
+            self._meas_op.get_device()
         )
-        self._psf = self._meas_op_precise.get_psf()
+        self._psf = self._meas_op.get_psf()
         self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
 
         dirty_image_np = self.get_dirty_image()
@@ -133,7 +136,7 @@ class PrimalDualPrecond(Optimiser):
             self._model = self._model - self._pr_step_size * self._meas_op.adjoint_op(
                 [
                     self._precond_weight[i] * self._dual[i]
-                    for i in range(self._rank_num_ch)
+                    for i in range(self._rank_ch_num)
                 ]
             )
             self._model = self._model.to(
@@ -194,20 +197,20 @@ class PrimalDualPrecond(Optimiser):
         is a tensor of shape (1, C, 1, 1).
         """
 
-        self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op_precise.get_op_norm_ch())
+        self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op.get_op_norm_ch())
         if self._verbose:
             if self._is_distributed:
                 dist.barrier()
             print(
                 f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
-                f"op norm {self._meas_op_precise.get_op_norm_ch().squeeze().cpu().tolist()}, "
+                f"op norm {self._meas_op.get_op_norm_ch().squeeze().cpu().tolist()}, "
                 f"heuristic noise level {self._heuristic.squeeze().cpu().tolist()}",
                 flush=True,
             )
 
         heu_corr_factor = torch.sqrt(
-            self._meas_op_precise.get_op_norm_prime_ch()
-            / self._meas_op_precise.get_op_norm_ch()
+            self._meas_op.get_op_norm_prime_ch()
+            / self._meas_op.get_op_norm_ch()
         )
         if not torch.allclose(
             heu_corr_factor,

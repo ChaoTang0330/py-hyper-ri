@@ -23,6 +23,7 @@ class Optimiser(ABC):
     def __init__(
         self,
         meas: List[torch.Tensor],
+        ch_freq: torch.Tensor,
         meas_op: MeasOp,
         save_pth: str = "results",
         file_prefix: str = "",
@@ -35,11 +36,15 @@ class Optimiser(ABC):
 
         Args:
             meas (torch.Tensor): The measurement tensor.
+            ch_freq (torch.Tensor): The frequency of each channel.
             meas_op (MeasOp): The measurement operator.
             save_pth (str, optional): The path where results will be saved. Defaults to "results".
             file_prefix (str, optional): The prefix of the saving files. Defaults to None.
         """
         self._meas_op = meas_op
+        self._ch_freq = ch_freq.to(
+            device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
+        ).view(1, -1, 1, 1)
         if isinstance(meas, torch.Tensor):
             self._meas = meas.to(self._meas_op.get_data_type_meas())
         else:

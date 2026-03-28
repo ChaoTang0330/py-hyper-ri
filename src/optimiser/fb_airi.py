@@ -12,7 +12,7 @@ from astropy.io import fits
 from .forward_backward import ForwardBackward
 from ..regulariser import DenAIRI
 from ..ri_measurement_operator import MeasOpHyperspectral
-from ..utils.spectral_index import get_spec_idx
+from ..interface import get_spec_idx
 
 
 class FBAIRI(ForwardBackward):
@@ -26,6 +26,7 @@ class FBAIRI(ForwardBackward):
     def __init__(
         self,
         meas: torch.Tensor,
+        ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenAIRI,
         rank_ch_start: int = 0,
@@ -71,6 +72,7 @@ class FBAIRI(ForwardBackward):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op if meas_op_approx is None else meas_op_approx,
             regulariser,
             meas_op_precise=meas_op,
@@ -329,7 +331,7 @@ class FBAIRI(ForwardBackward):
             )
 
             # generate spectral index map if applicable
-            if model_full_np.shape[1] > 1:
+            if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,
                     self._ch_freq.cpu().numpy().squeeze(),

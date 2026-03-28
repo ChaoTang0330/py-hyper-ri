@@ -26,6 +26,7 @@ class ForwardBackward(Optimiser):
     def __init__(
         self,
         meas: torch.Tensor,
+        ch_freq: torch.Tensor,
         meas_op: MeasOp,
         regulariser: Regulariser,
         meas_op_precise: Optional[MeasOp] = None,
@@ -40,6 +41,7 @@ class ForwardBackward(Optimiser):
 
         Args:
             meas (torch.Tensor): The measurement tensor.
+            ch_freq (torch.Tensor): The frequency of each channel.
             meas_op (MeasOp): The measurement operator.
             meas_op_precise (Optional[MeasOp]): The precise measurement operator.
             regulariser (Regulariser): The regulariser.
@@ -50,6 +52,7 @@ class ForwardBackward(Optimiser):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op,
             save_pth=save_pth,
             file_prefix=file_prefix,

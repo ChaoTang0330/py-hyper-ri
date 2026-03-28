@@ -7,13 +7,12 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
 from .primal_dual import PrimalDualPrecond
 from ..regulariser import DenAIRI, ProxEllipsoid
 from ..ri_measurement_operator import MeasOpHyperspectral
-from ..utils.spectral_index import get_spec_idx
+from ..interface import get_spec_idx
 
 
 class PDAIRI(PrimalDualPrecond):
@@ -27,6 +26,7 @@ class PDAIRI(PrimalDualPrecond):
     def __init__(
         self,
         meas: torch.Tensor,
+        ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser_prime: DenAIRI,
         regulariser_dual_data: ProxEllipsoid,
@@ -72,6 +72,7 @@ class PDAIRI(PrimalDualPrecond):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op,
             regulariser_prime,
             regulariser_dual_data,
@@ -111,7 +112,8 @@ class PDAIRI(PrimalDualPrecond):
         # calculate step size
         self._meas_op.set_real_flag(False)
         self._precond_weight = self._regulariser_dual_data.get_precond_weight()
-        self._meas_op.set_precond_weight(torch.sqrt(self._precond_weight))
+        precond_weight_sqrt = tuple(torch.sqrt(w) for w in self._precond_weight)
+        self._meas_op.set_precond_weight(precond_weight_sqrt)
         self._pr_step_size = 0.5 / self._meas_op.get_op_norm()
         if self._verbose and self._rank == 0:
             print(
@@ -120,7 +122,10 @@ class PDAIRI(PrimalDualPrecond):
                 flush=True,
             )
         self._meas_op.set_precond_weight(
-            torch.ones(1, 1, device=self._meas_op.get_device())
+            tuple(
+                    torch.ones(1, 1, device=self._meas_op.get_device())
+                    for _ in range(self._rank_ch_num)
+            )
         )
         self._meas_op.set_real_flag(True)
 
@@ -129,6 +134,12 @@ class PDAIRI(PrimalDualPrecond):
 
         # heuristic noise level
         self._calculate_channel_wise_heuristic()
+
+        # threshold used by spectral-index estimation in finalisation
+        self._spec_idx_prec = self._heuristic.min()
+        if self._is_distributed:
+            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+        self._spec_idx_prec = self._spec_idx_prec.item()
 
         # initialise AIRI prox
         self._peak_val_range = self._regulariser_prime.update(
@@ -219,7 +230,9 @@ class PDAIRI(PrimalDualPrecond):
                 device=self._meas_op.get_device(),
             )
             curr_l2_error_sum = curr_l2_error_sq.sum()
-            curr_l2_error_valid = curr_l2_error_sq.sqrt() < self._regulariser_dual_data.get_radius()
+            curr_l2_error_valid = (
+                curr_l2_error_sq.sqrt() < self._regulariser_dual_data.get_radius()
+            )
             curr_l2_error_valid_all = curr_l2_error_valid.all().int()
             if self._is_distributed:
                 dist.all_reduce(curr_l2_error_sum, op=dist.ReduceOp.SUM)
@@ -353,7 +366,7 @@ class PDAIRI(PrimalDualPrecond):
             )
 
             # generate spectral index map if applicable
-            if model_full_np.shape[1] > 1:
+            if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,
                     self._ch_freq.cpu().numpy().squeeze(),

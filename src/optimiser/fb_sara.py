@@ -14,7 +14,7 @@ from astropy.io import fits
 from .forward_backward import ForwardBackward
 from ..regulariser import ProxSARAPos
 from ..ri_measurement_operator import MeasOpHyperspectral
-from ..utils.spectral_index import get_spec_idx
+from ..interface.spectral_index import get_spec_idx
 
 
 class FBSARA(ForwardBackward):
@@ -28,6 +28,7 @@ class FBSARA(ForwardBackward):
     def __init__(
         self,
         meas: torch.Tensor,
+        ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxSARAPos,
         meas_op_approx: Optional[MeasOpHyperspectral] = None,
@@ -68,6 +69,7 @@ class FBSARA(ForwardBackward):
         """
         super().__init__(
             meas,
+            ch_freq,
             meas_op if meas_op_approx is None else meas_op_approx,
             regulariser,
             meas_op_precise=meas_op,
@@ -128,6 +130,12 @@ class FBSARA(ForwardBackward):
             )
         # set soft thresholding value
         self._regulariser.set_soft_thresholding_value(self._heuristic / 3.0)
+
+        # threshold used by spectral-index estimation in finalisation
+        self._spec_idx_prec = self._heuristic.min()
+        if self._is_distributed:
+            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+        self._spec_idx_prec = self._spec_idx_prec.item()
 
         # initialise weighting for the l1 norm
         self._regulariser.update(self._model)
@@ -337,7 +345,7 @@ class FBSARA(ForwardBackward):
             )
 
             # generate spectral index map if applicable
-            if model_full_np.shape[1] > 1:
+            if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,
                     self._ch_freq.cpu().numpy().squeeze(),
