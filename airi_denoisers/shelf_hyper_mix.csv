@@ -1,6 +1,0 @@
-1.0e-5,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_1e-05_ljr_5e-07_lr_1e-06_seed_0.onnx
-2.0e-5,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_2e-05_ljr_1e-06_lr_1e-06_seed_0.onnx
-4.0e-5,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_4e-05_ljr_2e-06_lr_1e-05_seed_0.onnx
-8.0e-5,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_8e-05_ljr_4e-06_lr_1e-05_seed_0.onnx
-1.6e-4,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_0.00016_ljr_8e-06_lr_1e-05_seed_0.onnx
-3.2e-4,./airi_denoisers/shelf_cube_ds2_mix_noaug_curv_fix/dncnn_noskip_nch_1_l1_mix_origin_sigma_0.00032_ljr_1.5e-05_lr_0.0001_seed_0.onnx
