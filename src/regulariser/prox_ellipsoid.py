@@ -24,11 +24,13 @@ class ProxEllipsoid(Regulariser):
         center: List[torch.Tensor],
         precond_weight: Optional[List[torch.Tensor]] = None,
         radius: Optional[torch.Tensor] = None,
+        rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         itr_min: int = 1,
         itr_max: int = 10,
         rel_var_tol: float = 1e-6,
         device: torch.device = torch.device("cpu"),
-        dtype: torch.dtype = torch.float,
+        dtype: torch.dtype = torch.complex64,
         verbose: bool = False,
     ):
         """
@@ -47,10 +49,15 @@ class ProxEllipsoid(Regulariser):
             rel_var_tol (float, optional): The relative variation tolerance for convergence in the forward-backward algorithm.
                 Defaults to 1e-6.
             device (torch.device, optional): The device for the tensors. Defaults to torch.device("cpu").
-            dtype (torch.dtype, optional): The data type for the tensors. Defaults to torch.float.
+            dtype (torch.dtype, optional): The data type for the tensors. Defaults to torch.complex64.
             verbose (bool, optional): Whether to print verbose information during the forward-backward algorithm. Defaults to False.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(
+            rank_num_ch=rank_num_ch,
+            rank_ch_start=rank_ch_start,
+            device=device,
+            dtype=dtype,
+        )
 
         self._center = tuple(
             c.to(device=self._device, dtype=self._dtype) for c in center
@@ -60,6 +67,7 @@ class ProxEllipsoid(Regulariser):
         self._rel_var_tol = rel_var_tol
         self._verbose = verbose
         self._rank_num_ch = len(center)
+        self._rank_ch_start = rank_ch_start
 
         if precond_weight is None:
             precond_weight = [
@@ -74,10 +82,12 @@ class ProxEllipsoid(Regulariser):
         if radius is None:
             # The theoretical l2 error bounds are used as the default radius of the \ell_2 ball,
             # assume chi-square distribution and tau=1
-            radius = torch.tensor([
-                math.sqrt(torch.numel(c) + 2.0 * math.sqrt(torch.numel(c)))
-                for c in center
-            ])
+            radius = torch.tensor(
+                [
+                    math.sqrt(torch.numel(c) + 2.0 * math.sqrt(torch.numel(c)))
+                    for c in center
+                ]
+            )
         if self._dtype in (torch.float64, torch.complex128):
             radius_dtype = torch.float64
         else:
@@ -104,9 +114,9 @@ class ProxEllipsoid(Regulariser):
         """
         for i in range(self._itr_max):
             result = self._proj_l2_ball(self._grad_descent(self._prev, x))
-            x_norm = sum(torch.sum(x_ch**2) for x_ch in x)
+            x_norm = sum(torch.linalg.vector_norm(x_ch) ** 2 for x_ch in x)
             diff_norm = sum(
-                torch.sum((result[i] - self._prev[i]) ** 2)
+                torch.linalg.vector_norm(result[i] - self._prev[i]) ** 2
                 for i in range(self._rank_num_ch)
             )
             if self._is_dist:
