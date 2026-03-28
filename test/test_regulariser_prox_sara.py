@@ -1,0 +1,52 @@
+"""Builder utilities and specific tests for SARA regulariser."""
+
+import torch
+
+from src.regulariser.prox_sara import ProxSARAPos
+
+from .regulariser_helpers import make_image_tensor, make_positive_threshold
+
+
+def create_prox_sara(
+    channels: int,
+    img_size: tuple[int, int] = (32, 32),
+    dtype: torch.dtype = torch.float32,
+    seed: int = 0,
+) -> tuple[ProxSARAPos, torch.Tensor]:
+    """Create SARA regulariser and input for common tests."""
+    reg = ProxSARAPos(
+        img_size=img_size,
+        rank_num_ch=channels,
+        wl_dict=("dirac", "db1"),
+        dec_lev=2,
+        max_iter=3,
+        obj_tol=1e-6,
+        dtype=dtype,
+        verbose=False,
+    )
+    reg.set_soft_thresholding_value(make_positive_threshold(channels, value=1.0e-3, dtype=dtype))
+    reg.set_noise_floor_level(make_positive_threshold(channels, value=1.0e-3, dtype=dtype))
+
+    x = make_image_tensor(channels=channels, img_size=img_size, dtype=dtype, seed=seed)
+    # Initialise reweighting with zero image as discussed.
+    reg.update(torch.zeros_like(x))
+    return reg, x
+
+
+def test_sara_enforces_positivity_constraint() -> None:
+    """SARA prox with positivity must output nonnegative tensor."""
+    reg, _ = create_prox_sara(channels=1, dtype=torch.float32, seed=3)
+    x = -torch.ones((1, 1, 32, 32), dtype=torch.float32)
+    y = reg(x)
+
+    assert torch.all(y >= 0)
+
+
+def test_sara_update_populates_weights() -> None:
+    """Calling update should populate per-dictionary reweighting tensors."""
+    reg, x = create_prox_sara(channels=2, dtype=torch.float32, seed=7)
+    reg.update(x)
+
+    assert len(reg._weights) > 0
+    if reg._dirac:
+        assert isinstance(reg._weights[-1], torch.Tensor)
