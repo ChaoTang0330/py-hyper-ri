@@ -31,6 +31,7 @@ class ProxSARAPos(Regulariser):
         self,
         img_size: Tuple[int, int],
         rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         wl_dict: Tuple[str, ...] = (
             "dirac",
             "db1",
@@ -72,7 +73,7 @@ class ProxSARAPos(Regulariser):
             dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
         self._img_size = img_size
         self._rank_num_ch = rank_num_ch

@@ -18,6 +18,8 @@ class ProxOpPositivity(Regulariser):
 
     def __init__(
         self,
+        rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
@@ -33,7 +35,7 @@ class ProxOpPositivity(Regulariser):
             verbose (bool, optional): If True, print progress messages.
                 Defaults to True.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
         self._verbose = verbose
 
     @torch.no_grad()

@@ -22,6 +22,8 @@ class Regulariser(ABC):
 
     def __init__(
         self,
+        rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
     ) -> None:
@@ -34,6 +36,8 @@ class Regulariser(ABC):
             dtype (torch.dtype, optional): The data type for the tensors.
                 Defaults to torch.float.
         """
+        self._rank_num_ch = rank_num_ch
+        self._rank_ch_start = rank_ch_start
         self._dtype = dtype
         self._device = device
 
