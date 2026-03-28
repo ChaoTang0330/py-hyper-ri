@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["test"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-ra"
+pythonpath = ["."]
+filterwarnings = [
+    'ignore:.*torch\.jit\.script.*deprecated.*:DeprecationWarning:torch\.jit\._script',
+]

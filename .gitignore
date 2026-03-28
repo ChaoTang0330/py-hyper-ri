@@ -47,8 +47,11 @@ logs/
 
 # Exception
 !airi_denoisers/shelf*.csv
+!airi_denoisers/*shelf/*.onnx
 !data/3c353_gdth.fits
 !data/3c353_meas_dt_1_seed_0.mat
+!test/data/*/*.mat
+!test/data/*/*.fits
 !config/*.json
 !requirements.txt
 !tutorial_airi_python.ipynb
