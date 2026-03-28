@@ -10,6 +10,7 @@ import torch
 from onnx2torch import convert
 
 from .regulariser import Regulariser
+from ..interface.io import resolve_existing_file_path
 
 
 class DenAIRI(Regulariser):
@@ -26,6 +27,7 @@ class DenAIRI(Regulariser):
         shelf_path: str,
         rand_trans: bool = True,
         rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
@@ -42,11 +44,10 @@ class DenAIRI(Regulariser):
             dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
         self._rand_trans = rand_trans
         self._net_scaling = 1.0
-        self._rank_num_ch = rank_num_ch
         self._shelf = {}
         self._list_network = [None] * rank_num_ch
         self._list_net_scaling = [1.0] * rank_num_ch
@@ -54,14 +55,19 @@ class DenAIRI(Regulariser):
         self._verbose = verbose
 
         # load paths of networks
-        if not os.path.isfile(shelf_path):
-            raise FileNotFoundError("Shelf file not found: " + shelf_path)
-        with open(shelf_path, newline="", encoding="utf-8") as shelf_file:
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        resolved_shelf_path = resolve_existing_file_path(shelf_path, project_root)
+
+        with open(resolved_shelf_path, newline="", encoding="utf-8") as shelf_file:
             shelf_reader = csv.reader(shelf_file, delimiter=",")
             for row in shelf_reader:
-                self._shelf[float(row[0])] = row[1]
-                if not os.path.isfile(row[1]):
-                    raise FileNotFoundError("Denoiser file not found: " + row[1])
+                sigma = float(row[0])
+                resolved_net_path = resolve_existing_file_path(
+                    row[1], project_root
+                )
+                self._shelf[sigma] = resolved_net_path
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
         self._shelf = dict(sorted(self._shelf.items()))
@@ -133,6 +139,8 @@ class DenAIRI(Regulariser):
         if ch_heuristic is not None and ch_peak_est is not None:
             ch_heu_peak = ch_heuristic / ch_peak_est
             ch_heu_peak = ch_heu_peak.cpu().squeeze().tolist()
+            if isinstance(ch_heu_peak, (float, int)):
+                ch_heu_peak = [float(ch_heu_peak)]
 
             for i in range(self._rank_num_ch):
                 sigma_s = max(
