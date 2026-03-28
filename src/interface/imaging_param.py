@@ -185,7 +185,7 @@ def set_imaging_params_ri(
         param_proxop["device"] = torch.device(list_devices[0])
     # distributed settings
     param_optimiser["dist_backend"] = param_general.get("dist_backend", "gloo")
-    if not dist.backend.is_available(param_optimiser["dist_backend"]):
+    if not dist.is_backend_available(param_optimiser["dist_backend"]):
         param_optimiser["dist_backend"] = "gloo"
     param_optimiser["dist_init_method"] = param_general.get(
         "dist_init_method", "env://"

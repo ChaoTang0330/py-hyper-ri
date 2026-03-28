@@ -5,12 +5,14 @@ Utility functions for input/output operations.
 import os
 import argparse
 import json
-import h5py
+from pathlib import Path
 from typing import Any, Dict, Optional
 
+import h5py
 import numpy as np
 from scipy.io import loadmat
 from scipy.io.matlab import matfile_version
+
 
 def env_int(name: str, default: int) -> int:
     """
@@ -26,7 +28,49 @@ def env_int(name: str, default: int) -> int:
     return int(v) if v is not None else default
 
 
-def print_dict(curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = True) -> None:
+def resolve_existing_file_path(
+    path: str,
+    library_root: str,
+    relative_anchor: Optional[str] = None,
+) -> str:
+    # 1) Normalize raw text from config/csv
+    raw = os.path.expandvars(path.strip().strip('"').strip("'"))
+    p = Path(raw).expanduser()
+
+    attempts = []
+
+    # 2) Absolute path case
+    if p.is_absolute():
+        rp = p.resolve(strict=False)
+        attempts.append(rp)
+        if rp.is_file():
+            return str(rp)
+    else:
+        # 3) Relative candidates in priority order
+        candidate_roots = [Path.cwd()]
+        if relative_anchor is not None:
+            candidate_roots.append(Path(relative_anchor))
+        candidate_roots.append(Path(library_root))
+
+        seen = set()
+        for root in candidate_roots:
+            cand = (root / p).resolve(strict=False)
+            key = str(cand)
+            if key in seen:
+                continue
+            seen.add(key)
+            attempts.append(cand)
+            if cand.is_file():
+                return key
+
+    raise FileNotFoundError(
+        "File not found: " + path + "; attempted: " + ", ".join(str(a) for a in attempts)
+    )
+
+
+def print_dict(
+    curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = True
+) -> None:
     """
     Print items in a dictionary.
 
@@ -36,19 +80,20 @@ def print_dict(curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = Tr
         flush (bool, optional): Whether to flush the output buffer. Defaults to True.
     """
     for k, v in curr_dict.items():
-        print(' ' * indentation + f"{k}: {v}", flush=flush)
+        print(" " * indentation + f"{k}: {v}", flush=flush)
 
-def verbose_print(*args: str, verbose: bool = True):
+
+def verbose_print(args: str, verbose: bool = True):
     """
     Print messages if verbose is True.
 
     Args:
-        args (str): Variable length argument list of strings to print.
+        args (str): String to print.
         verbose (bool, optional): Flag to indicate whether to print the messages. Defaults to True.
 
     """
     if verbose:
-        print(*args, flush=True)
+        print(args, flush=True)
 
 
 def load_mat_to_np(file_name: str) -> Dict[str, Any]:
@@ -75,6 +120,7 @@ def load_mat_to_np(file_name: str) -> Dict[str, Any]:
         data = loadmat(file_name)
 
     return data
+
 
 def parsing_arguments() -> argparse.Namespace:
     """
@@ -104,7 +150,7 @@ def parsing_arguments() -> argparse.Namespace:
         "--algorithm",
         type=str,
         default=None,
-        choices=["airi", "cairi", "usara"],
+        choices=["airi", "cairi", "usara", "hyperairi", "hyper-usara"],
         help="imaging algorithm",
     )
     parser.add_argument(

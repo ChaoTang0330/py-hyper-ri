@@ -8,3 +8,5 @@ from .io import load_mat_to_np
 from .load_data import load_data_to_tensor
 from .imaging_param import set_imaging_params_ri
 from .gen_imaging_weights import gen_imaging_weights
+from .spectral_index import fit_clean_beam, get_spec_idx
+from .dist_util import gather_ch_to_tensor

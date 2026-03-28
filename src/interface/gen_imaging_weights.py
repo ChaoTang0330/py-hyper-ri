@@ -4,7 +4,15 @@ import numpy as np
 import torch
 
 
-def gen_imaging_weights(u, v, natural_weight, im_size, weight_type="briggs", weight_gridsize=2.0, weight_robustness=0.0):
+def gen_imaging_weights(
+    u,
+    v,
+    natural_weight,
+    im_size,
+    weight_type="briggs",
+    weight_gridsize=2.0,
+    weight_robustness=0.0,
+):
     """
     Parameters
     ----------
@@ -28,12 +36,14 @@ def gen_imaging_weights(u, v, natural_weight, im_size, weight_type="briggs", wei
     imaging_weight : torch.tensor
         weights inferred from the density of the sampling (uniform/Briggs).
     """
-    
+
     u = u.clone()
     v = v.clone()
 
     nmeas = u.numel()
-    weight_grid_size = torch.tensor([np.floor(i * weight_gridsize).astype(int) for i in im_size])
+    weight_grid_size = torch.tensor(
+        [np.floor(i * weight_gridsize).astype(int) for i in im_size], device=u.device
+    )
     natural_weight_2 = (natural_weight.view(-1).to(u.device)) ** 2
 
     if natural_weight_2.size(-1) == 1:
@@ -42,17 +52,33 @@ def gen_imaging_weights(u, v, natural_weight, im_size, weight_type="briggs", wei
     v[v < 0] = -v[v < 0]
 
     # Initialize gridded weights matrix with zeros
-    p = torch.floor((v + torch.pi) * weight_grid_size[0] / 2 / torch.pi).to(torch.int64).view(-1) - 1
-    q = torch.floor((u + torch.pi) * weight_grid_size[1] / 2 / torch.pi).to(torch.int64).view(-1) - 1
-    p[p==-1] = weight_grid_size[0] - 1
-    q[q==-1] = weight_grid_size[1] - 1
-    gridded_weights = torch.zeros(torch.prod(weight_grid_size), dtype=torch.float64, device=u.device)
+    p = (
+        torch.floor((v + torch.pi) * weight_grid_size[0] / 2 / torch.pi)
+        .to(torch.int64)
+        .view(-1)
+        - 1
+    )
+    q = (
+        torch.floor((u + torch.pi) * weight_grid_size[1] / 2 / torch.pi)
+        .to(torch.int64)
+        .view(-1)
+        - 1
+    )
+    p[p == -1] = weight_grid_size[0] - 1
+    q[q == -1] = weight_grid_size[1] - 1
+    gridded_weights = torch.zeros(
+        torch.prod(weight_grid_size), dtype=torch.float64, device=u.device
+    )
     uv_idx = p * weight_grid_size[1] + q
     if weight_type != "none":
         if weight_type == "uniform":
             values = torch.ones_like(p, dtype=torch.float64)
         elif weight_type == "briggs":
             values = natural_weight_2
+        else:
+            raise NotImplementedError(
+                "Not implemented image weighting type: " + weight_type
+            )
 
     # Use scatter_add_ to update gridded_weights
     gridded_weights.scatter_add_(0, uv_idx, values.to(torch.float64))
@@ -65,9 +91,9 @@ def gen_imaging_weights(u, v, natural_weight, im_size, weight_type="briggs", wei
             imaging_weight = 1 / torch.sqrt(gridded_vals)
         elif weight_type == "briggs":
             # Compute robust scale factor
-            robust_scale = (torch.sum(natural_weight_2) / torch.sum(gridded_weights**2)) * (
-                5 * 10 ** (-weight_robustness)
-            ) ** 2
+            robust_scale = (
+                torch.sum(natural_weight_2) / torch.sum(gridded_weights**2)
+            ) * (5 * 10 ** (-weight_robustness)) ** 2
             imaging_weight = 1 / torch.sqrt(1 + robust_scale * gridded_vals)
     return imaging_weight.view(1, 1, -1)
 
@@ -115,7 +141,9 @@ def gen_imaging_weights_np(
 
     # Initialize
     nmeas = u.size
-    weight_grid_size = np.floor(np.array((img_size[0] * weight_gridsize, img_size[1] * weight_gridsize)))
+    weight_grid_size = np.floor(
+        np.array((img_size[0] * weight_gridsize, img_size[1] * weight_gridsize))
+    )
     gridded_weight = np.zeros(
         weight_grid_size.astype(int), dtype=np.double
     )  # Initialize gridded weights matrix with zeros
@@ -123,7 +151,9 @@ def gen_imaging_weights_np(
 
     # grid uv points
     q = np.floor((u + np.pi) * weight_grid_size[1] / 2.0 / np.pi).astype(int) - 1
-    p = np.floor((v + np.pi) * weight_grid_size[0] / 2.0 / np.pi).astype(int) - 1  # matching index in matlab
+    p = (
+        np.floor((v + np.pi) * weight_grid_size[0] / 2.0 / np.pi).astype(int) - 1
+    )  # matching index in matlab
 
     # Handle edge cases where q or p is -1
     q[q == -1] = weight_grid_size[1].astype(int) - 1
@@ -149,6 +179,8 @@ def gen_imaging_weights_np(
         # Apply weighting
         image_weight = 1.0 / np.sqrt(1.0 + robust_scale * gridded_weight[p, q])
     else:
-        raise NotImplementedError("Image weighting type: " + weight_type)
+        raise NotImplementedError(
+            "Not implelemnted image weighting type: " + weight_type
+        )
 
     return image_weight

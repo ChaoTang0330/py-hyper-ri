@@ -111,6 +111,7 @@ def load_data_to_tensor(
     data["w"] = []
     data["natural_weight"] = []
     data["imaging_weight"] = []
+    data["precond_weight"] = []
     data["y"] = []
     data["max_proj_baseline"] = 0
     max_proj_baseline = 0
@@ -324,6 +325,7 @@ def load_data_to_tensor(
         data["w"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["natural_weight"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["imaging_weight"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
+        data["precond_weight"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["y"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
 
         for ch_physical in range(sum(ch_partition[:ch]), sum(ch_partition[: ch + 1])):
@@ -483,7 +485,9 @@ def load_data_to_tensor(
         dist.barrier()
     for ch in range(rank_eff_ch_start, rank_eff_ch_last):
         verbose_print(
-            f"INFO: effective channel {ch + 1} loaded {data['u'][ch - rank_eff_ch_start].shape[-1]} uv points, frequency {data['freqs'][ch]}.",
+            f"INFO: effective channel {ch + 1} loaded "
+            f"{data['u'][ch - rank_eff_ch_start].shape[-1]} uv points, "
+            f"frequency {data['freqs'][ch]}.",
             verbose,
         )
 

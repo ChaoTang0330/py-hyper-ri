@@ -3,6 +3,7 @@ from scipy.optimize import curve_fit
 from scipy.signal import convolve2d
 from skimage.measure import label, regionprops
 
+
 # 2D Gaussian model
 def gaussian2D(coords, sigma_x, sigma_y, theta):
     # coords: array of shape (N,2) with columns [x, y]
@@ -17,20 +18,32 @@ def gaussian2D(coords, sigma_x, sigma_y, theta):
 
 def fit_clean_beam(psf, verbose=True):
     # Normalize the PSF so its maximum is 1.
-    psf = psf / np.max(psf)
+    peak = np.max(psf)
+    if not np.isfinite(peak) or peak <= 0:
+        raise ValueError("PSF peak must be a positive finite value.")
+    psf = psf / peak
 
     # --- Initial guess using the bounding box of the region where psf > 0.5 ---
     # Create a binary mask for psf > 0.5 and label connected regions.
     mask = psf > 0.5
     labeled = label(mask)
     props = regionprops(labeled)
-    if len(props) == 0:
-        raise ValueError("No region found with psf > 0.5")
     # Using the first region (assumed to be the one of interest)
     # Note: regionprops.bbox returns (min_row, min_col, max_row, max_col)
     min_row, min_col, max_row, max_col = props[0].bbox
     height = max_row - min_row
     width = max_col - min_col
+    if height * width < 3.0:
+        # Return a delta function kernel
+        if verbose:
+            print(
+                "INFO: PSF is very compact."
+                "The clean beam is considered as a delta function."
+            )
+        kernel = np.zeros((3, 3))
+        kernel[1, 1] = 1.0
+        return kernel, 0.0, 0.0, 0.0
+    
     height = max(height, 1.1)
     width = max(width, 1.1)
 
