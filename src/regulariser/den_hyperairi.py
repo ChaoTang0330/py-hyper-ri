@@ -9,6 +9,7 @@ import torch.distributed as dist
 from onnx2torch import convert
 
 from .regulariser import Regulariser
+from ..interface.io import resolve_existing_file_path
 
 # TODO: Add faceting functionality
 
@@ -25,10 +26,10 @@ class DenHyperAIRI(Regulariser):
     def __init__(
         self,
         img_size: tuple,
-        rank_num_ch: int,
-        rank_ch_start: int,
         ch_freq: torch.Tensor,
         shelf_path: str,
+        rank_num_ch: int = 1,
+        rank_ch_start: int = 0,
         rand_trans: bool = True,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
@@ -44,15 +45,12 @@ class DenHyperAIRI(Regulariser):
             shelf_path (str): Path to the CSV file containing the denoiser shelf.
             rand_trans (bool, optional): If True, apply random transformations to the input
                 before applying denoisers. Defaults to True.
-            multi_stream (bool, optional): If True, use multiple CUDA streams for parallelism. Defaults to False.
-                performed. Defaults to torch.device("cpu").
             dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
-        super().__init__(device=device, dtype=dtype)
+        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
         self._img_size = img_size
-        self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
         self._flip_table = (tuple(), (2,), (3,), (2, 3))
@@ -68,14 +66,19 @@ class DenHyperAIRI(Regulariser):
         self._verbose = verbose
 
         # load paths of networks
-        if not os.path.isfile(shelf_path):
-            raise FileNotFoundError("Shelf file not found: " + shelf_path)
-        with open(shelf_path, newline="", encoding="utf-8") as shelf_file:
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        resolved_shelf_path = resolve_existing_file_path(shelf_path, project_root)
+
+        with open(resolved_shelf_path, newline="", encoding="utf-8") as shelf_file:
             shelf_reader = csv.reader(shelf_file, delimiter=",")
             for row in shelf_reader:
-                self._shelf[float(row[0])] = row[1]
-                if not os.path.isfile(row[1]):
-                    raise FileNotFoundError("Denoiser file not found: " + row[1])
+                sigma = float(row[0])
+                resolved_net_path = resolve_existing_file_path(
+                    row[1], project_root
+                )
+                self._shelf[sigma] = resolved_net_path
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
         self._shelf = dict(sorted(self._shelf.items()))
@@ -97,9 +100,6 @@ class DenHyperAIRI(Regulariser):
         x_to_right = x[:, -1:, :, :]
         x_from_right = torch.empty_like(x_to_right)
 
-        if self._multi_stream:
-            curr_stream = torch.cuda.current_stream(device=self._device)
-
         left_rank_req = None
         right_rank_req = None
 
@@ -112,12 +112,7 @@ class DenHyperAIRI(Regulariser):
                 dist.P2POp(dist.isend, x_to_left, self._rank - 1),
                 dist.P2POp(dist.irecv, x_from_left, self._rank - 1),
             ]
-            if self._multi_stream:
-                self._streams_ch_left.wait_stream(curr_stream)
-                with torch.cuda.stream(self._streams_ch_left):
-                    left_rank_req = dist.batch_isend_irecv(list_p2p_op)
-            else:
-                left_rank_req = dist.batch_isend_irecv(list_p2p_op)
+            left_rank_req = dist.batch_isend_irecv(list_p2p_op)
 
         if self._rank == self._world_size - 1:
             x_from_right = x_to_right
@@ -128,67 +123,28 @@ class DenHyperAIRI(Regulariser):
                 dist.P2POp(dist.isend, x_to_right, self._rank + 1),
                 dist.P2POp(dist.irecv, x_from_right, self._rank + 1),
             ]
-            if self._multi_stream:
-                self._streams_ch_right.wait_stream(curr_stream)
-                with torch.cuda.stream(self._streams_ch_right):
-                    right_rank_req = dist.batch_isend_irecv(list_p2p_op)
-            else:
-                right_rank_req = dist.batch_isend_irecv(list_p2p_op)
+            right_rank_req = dist.batch_isend_irecv(list_p2p_op)
 
         result = torch.empty_like(x)
 
-        if not self._multi_stream:
-            for i in range(self._rank_num_ch):
-                # prepare input for the denoiser
-                if i == 0:
-                    if left_rank_req is not None:
-                        for req in left_rank_req:
-                            req.wait()
-                    net_input = torch.cat([x_from_left, x[:, i : i + 2, :, :]], dim=1)
-                elif i == self._rank_num_ch - 1:
-                    if right_rank_req is not None:
-                        for req in right_rank_req:
-                            req.wait()
-                    net_input = torch.cat(
-                        [x[:, i - 1 : i + 1, :, :], x_from_right], dim=1
-                    )
-                else:
-                    net_input = x[:, i - 1 : i + 2, :, :]
-                result_ch = self._den_ch_single(net_input, i)
-                result[:, i : i + 1, :, :].copy_(result_ch)
-        else:
-            # denoise mid channels in multiple streams
-            with torch.cuda.stream(self._streams_ch_mid):
-                for i in range(1, self._rank_num_ch - 1):
-                    result_ch = self._den_ch_single(x[:, i - 1 : i + 2, :, :], i)
-                    result[:, i : i + 1, :, :].copy_(result_ch)
-
-            # denoise leftmost channel
-            with torch.cuda.stream(self._streams_ch_left):
+        for i in range(self._rank_num_ch):
+            # prepare input for the denoiser
+            if i == 0:
                 if left_rank_req is not None:
                     for req in left_rank_req:
                         req.wait()
-                # prepare input for the denoiser
-                result_ch_l = self._den_ch_single(
-                    torch.cat([x_from_left, x[:, 0:2, :, :]], dim=1), 0
-                )
-                result[:, 0:1, :, :].copy_(result_ch_l)
-
-            # denoise rightmost channel
-            with torch.cuda.stream(self._streams_ch_right):
+                net_input = torch.cat([x_from_left, x[:, i : i + 2, :, :]], dim=1)
+            elif i == self._rank_num_ch - 1:
                 if right_rank_req is not None:
                     for req in right_rank_req:
                         req.wait()
-                # prepare input for the denoiser
-                result_ch_r = self._den_ch_single(
-                    torch.cat([x[:, -2:, :, :], x_from_right], dim=1),
-                    self._rank_num_ch - 1,
+                net_input = torch.cat(
+                    [x[:, i - 1 : i + 1, :, :], x_from_right], dim=1
                 )
-                result[:, -1:, :, :].copy_(result_ch_r)
-            # synchronize all streams
-            curr_stream.wait_stream(self._streams_ch_mid)
-            curr_stream.wait_stream(self._streams_ch_left)
-            curr_stream.wait_stream(self._streams_ch_right)
+            else:
+                net_input = x[:, i - 1 : i + 2, :, :]
+            result_ch = self._den_ch_single(net_input, i)
+            result[:, i : i + 1, :, :].copy_(result_ch)
 
         result = result.relu_()
 
@@ -257,7 +213,7 @@ class DenHyperAIRI(Regulariser):
                 1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
             ).flatten()
             ch_heu_peak = ch_heuristic / ch_peak_est
-            ch_heu_peak = ch_heu_peak.cpu().flatten().tolist()
+            ch_heu_peak = ch_heu_peak.cpu().squeeze().tolist()
 
             for i in range(self._rank_num_ch):
                 sigma_s = max(
