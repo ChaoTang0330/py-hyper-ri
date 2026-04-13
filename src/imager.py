@@ -57,6 +57,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         "local_world_size": env_int("LOCAL_WORLD_SIZE", 1),
         "node_rank": env_int("NODE_RANK", 0),
     }
+    use_distributed = param_comm["world_size"] > 1
 
     # sanity check
     if param_comm["world_size"] > param_optimiser["ch_effective"]:
@@ -65,26 +66,28 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             f"the number of effective channels ({param_optimiser['ch_effective']})."
         )
 
-    dist.init_process_group(
-        backend=param_optimiser["dist_backend"],
-        init_method=param_optimiser["dist_init_method"],
-        rank=param_comm["rank"],
-        world_size=param_comm["world_size"],
-    )
+    if use_distributed:
+        dist.init_process_group(
+            backend=param_optimiser["dist_backend"],
+            init_method=param_optimiser["dist_init_method"],
+            rank=param_comm["rank"],
+            world_size=param_comm["world_size"],
+        )
 
     # Small header
-    dist.barrier()
-    if param_comm["rank"] == 0:
-        print(
-            f"INFO: torch.distributed initialized with backend={dist.get_backend()}",
-            flush=True,
-        )
-        print(
-            f"INFO: num of processes = {param_comm['world_size']}, "
-            f"num of nodes = {param_comm['world_size'] // param_comm['local_world_size']}",
-            flush=True,
-        )
-    dist.barrier()
+    if use_distributed:
+        dist.barrier()
+        if param_comm["rank"] == 0:
+            print(
+                f"INFO: torch.distributed initialized with backend={dist.get_backend()}",
+                flush=True,
+            )
+            print(
+                f"INFO: num of processes = {param_comm['world_size']}, "
+                f"num of nodes = {param_comm['world_size'] // param_comm['local_world_size']}",
+                flush=True,
+            )
+        dist.barrier()
 
     # load data
     data = load_data_to_tensor(
@@ -109,13 +112,13 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
     # prepare measurement operator
     MeasOpClass = None
-    if param_measop["meas_op_type"] == "finufft":
+    if param_measop["nufft_package"] == "finufft":
         MeasOpClass = MeasOpFinufft
-    elif param_measop["meas_op_type"] == "tkbn":
+    elif param_measop["nufft_package"] == "tkbn":
         MeasOpClass = MeasOpTkbn
     else:
         raise ValueError(
-            f"Unsupported measurement operator type: {param_measop['meas_op_type']}"
+            f"Unsupported measurement operator type: {param_measop['nufft_package']}"
         )
 
     meas_op = MeasOpHyperspectral(
@@ -149,7 +152,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
     if param_optimiser["algorithm"] == "usara":
         # prepare proximal operator of SARA with positivity constraint
         prox_op_sara = ProxSARAPos(
-            param_measop["img_size"],
+            param_optimiser["img_size"],
+            rank_num_ch=len(data["y"]),
+            rank_ch_start=data["rank_eff_ch_start"],
             device=param_proxop["device"],
             dtype=param_proxop["dtype"],
             verbose=param_proxop["verbose"],
@@ -157,10 +162,11 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
         # prepare uSARA optimiser
         optimiser = FBSARA(
-            data["y"],
-            meas_op,
-            prox_op_sara,
-            use_ROP=param_measop["use_ROP"],
+            meas=data["y"],
+            ch_freq=data["freqs"],
+            meas_op=meas_op,
+            regulariser=prox_op_sara,
+            rank_ch_start=data["rank_eff_ch_start"],
             meas_op_approx=meas_op_approx,
             im_min_itr=param_optimiser["im_min_itr"],
             im_max_itr=param_optimiser["im_max_itr"],
@@ -179,9 +185,11 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
     elif param_optimiser["algorithm"] == "airi":
         # prepare AIRI denoiser
-        prox_op_airi = DenAIRI(
+        denoiser_airi = DenAIRI(
             param_proxop["dnn_shelf_path"],
             rand_trans=param_proxop["dnn_apply_transform"],
+            rank_num_ch=len(data["y"]),
+            rank_ch_start=data["rank_eff_ch_start"],
             device=param_proxop["device"],
             dtype=param_proxop["dtype"],
             verbose=param_proxop["verbose"],
@@ -189,9 +197,10 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
         # prepare AIRI optimiser
         optimiser = FBAIRI(
-            data["y"],
-            meas_op,
-            prox_op_airi,
+            meas=data["y"],
+            ch_freq=data["freqs"],
+            meas_op=meas_op,
+            regulariser=denoiser_airi,
             meas_op_approx=meas_op_approx,
             im_min_itr=param_optimiser["im_min_itr"],
             im_max_itr=param_optimiser["im_max_itr"],
@@ -210,7 +219,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
     elif param_optimiser["algorithm"] == "cairi":
         # prepare AIRI denoiser
-        prox_op_airi = DenAIRI(
+        denoiser_airi = DenAIRI(
             param_proxop["dnn_shelf_path"],
             rand_trans=param_proxop["dnn_apply_transform"],
             device=param_proxop["device"],
@@ -221,15 +230,19 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         prox_op_dual_data = ProxEllipsoid(
             center=data["y"],
             precond_weight=data["precond_weight"],
+            rank_num_ch=len(data["y"]),
+            rank_ch_start=data["rank_eff_ch_start"],
             device=meas_op.get_device(),
             dtype=meas_op.get_data_type_meas(),
         )
 
         optimiser = PDAIRI(
-            data["y"],
-            meas_op,
-            prox_op_airi,
-            prox_op_dual_data,
+            meas=data["y"],
+            ch_freq=data["freqs"],
+            meas_op=meas_op,
+            regulariser_prime=denoiser_airi,
+            regulariser_dual_data=prox_op_dual_data,
+            rank_ch_start=data["rank_eff_ch_start"],
             im_min_itr=param_optimiser["im_min_itr"],
             im_max_itr=param_optimiser["im_max_itr"],
             im_var_tol=param_optimiser["im_var_tol"],
@@ -317,5 +330,6 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
     # clsoing down torch.distributed
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-    dist.barrier()
-    dist.destroy_process_group()
+    if use_distributed:
+        dist.barrier()
+        dist.destroy_process_group()
