@@ -31,6 +31,7 @@ class FBSARA(ForwardBackward):
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxSARAPos,
+        rank_ch_start: int = 0,
         meas_op_approx: Optional[MeasOpHyperspectral] = None,
         im_min_itr: int = 30,
         im_max_itr: int = 2000,
@@ -77,6 +78,7 @@ class FBSARA(ForwardBackward):
             im_max_itr=im_max_itr * im_max_itr_outer,
             save_pth=save_pth,
             file_prefix=file_prefix,
+            rank_ch_start=rank_ch_start,
         )
 
         self._use_approx_meas_op = meas_op_approx is not None
@@ -119,17 +121,11 @@ class FBSARA(ForwardBackward):
         # set noise floor level in wavelet domain
         # The noise floor level is not affected by the heuristic scaling factor
         # divided by 3.0 -> 9 wavelet bases
-        self._regulariser.set_noise_floor_level(
-            self._heuristic / 3.0 / self._heu_noise_scale
-        )
-        if self._verbose and self._rank == 0:
-            print(
-                f"INFO: estimated noise floor level in "
-                f"wavelet coeeficients: {self._heuristic/3.0}",
-                flush=True,
-            )
+        wl_noise_floor = self._heuristic / 3.0 / self._heu_noise_scale
+        self._regulariser.set_noise_floor_level(wl_noise_floor)
         # set soft thresholding value
-        self._regulariser.set_soft_thresholding_value(self._heuristic / 3.0)
+        sfth_level = self._heuristic / 3.0
+        self._regulariser.set_soft_thresholding_value(sfth_level)
 
         # threshold used by spectral-index estimation in finalisation
         self._spec_idx_prec = self._heuristic.min()
@@ -147,18 +143,38 @@ class FBSARA(ForwardBackward):
         self._reweighting_flag = False
 
         if self._is_distributed:
-            dist.barrier()
-        if self._verbose and self._rank == 0:
-            print(f"INFO: forward-backward step size (gamma): {self._gd_step_size}")
+                dist.barrier()
+        if self._verbose:
+            if self._rank == 0:
+                print(f"INFO: forward-backward step size (gamma): {self._gd_step_size}")
+                if self._use_approx_meas_op:
+                    print(
+                        "INFO: use approximate measurement operator for reconstruction",
+                        flush=True,
+                    )
+            if self._is_distributed:
+                dist.barrier()
+            reg_param = self._heuristic/3.0/self._gd_step_size
             print(
-                f"INFO: regularization parameter (lambda): {self._heuristic/3.0/self._gd_step_size}"
+                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
+                f"regularization parameter (lambda): {reg_param.squeeze().cpu().tolist()}",
+                flush=True,
             )
-            print(f"INFO: heuristic soft threolding level: {self._heuristic/3.0}")
-            if self._use_approx_meas_op:
-                print(
-                    "INFO: use approximate measurement operator for reconstruction",
-                    flush=True,
-                )
+            if self._is_distributed:
+                dist.barrier()
+            print(
+                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
+                f"heuristic soft threolding level: {sfth_level.squeeze().cpu().tolist()}",
+                flush=True,
+            )
+            if self._is_distributed:
+                dist.barrier()
+            print(
+                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
+                f"estimated noise floor level in wavelet coeeficients: {wl_noise_floor.squeeze().cpu().tolist()}",
+                flush=True,
+            )
+            
             print("\n*************************************************", flush=True)
             print("********* STARTING ALGORITHM:   uSARA   *********", flush=True)
             print("*************************************************", flush=True)
@@ -208,10 +224,10 @@ class FBSARA(ForwardBackward):
             print(
                 f"Cumulative itr: {self._iter+1},  re-weighting itr: {self._iter_outer+1},",
                 f"forward-backward itr: {self._iter_inner+1},",
-                f"relative variation {self._im_rel_var}",
-                f"\ntimings: gradient step {self._t_forward} sec,",
-                f"denoising step {self._t_backward} sec,",
-                f"iteration {self._t_iter} sec.\n",
+                f"relative variation {self._im_rel_var:.3e}",
+                f"\ntimings: gradient step {self._t_forward:.3g} sec,",
+                f"denoising step {self._t_backward:.3g} sec,",
+                f"iteration {self._t_iter:.3g} sec.\n",
                 flush=True,
             )
 
@@ -238,11 +254,11 @@ class FBSARA(ForwardBackward):
                 )
                 print(
                     f"INFO: Re-weighting iteration {self._iter_outer+1}",
-                    f"completed in {self._t_iter_outer} sec.",
+                    f"completed in {self._t_iter_outer:.3g} sec.",
                     flush=True,
                 )
                 print(
-                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer}",
+                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer:.3g}",
                     flush=True,
                 )
 
@@ -267,12 +283,14 @@ class FBSARA(ForwardBackward):
             # update l1 weighting
             self._regulariser.update(self._model)
 
-            if self._verbose and self._rank == 0:
-                print(
-                    "INFO: The std of the residual dirty image",
-                    f"{np.std(self.get_residual_image()/self._psf_peak).item()}",
-                    flush=True,
-                )
+            if self._verbose:
+                residual_full_np = self.get_residual_image(dtype=torch.float32)
+                if self._rank == 0:
+                    print(
+                        "INFO: The std of the residual dirty image",
+                        f"{np.std(residual_full_np).item():.3e}",
+                        flush=True,
+                    )
 
             # save intermediate results
             if self._reweight_save:
