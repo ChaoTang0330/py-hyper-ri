@@ -219,7 +219,7 @@ class FBHyperAIRI(ForwardBackward):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                     f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
                     flush=True,
                 )

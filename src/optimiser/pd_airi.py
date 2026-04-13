@@ -86,7 +86,6 @@ class PDAIRI(PrimalDualPrecond):
         self._im_min_itr = im_min_itr
         self._im_var_tol = im_var_tol
         self._im_peak_est = im_peak_est
-        # self._heu_noise_scale = heu_noise_scale
         self._adapt_net_select = adapt_net_select
         self._peak_tol_min = peak_tol_min
         self._peak_tol = peak_tol_max
@@ -190,7 +189,7 @@ class PDAIRI(PrimalDualPrecond):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                     f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
                     flush=True,
                 )
