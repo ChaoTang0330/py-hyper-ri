@@ -66,8 +66,6 @@ class ProxEllipsoid(Regulariser):
         self._itr_max = max(self._itr_min, itr_max)
         self._rel_var_tol = rel_var_tol
         self._verbose = verbose
-        self._rank_num_ch = len(center)
-        self._rank_ch_start = rank_ch_start
 
         if precond_weight is None:
             precond_weight = [

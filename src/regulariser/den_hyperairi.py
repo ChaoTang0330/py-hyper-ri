@@ -11,8 +11,6 @@ from onnx2torch import convert
 from .regulariser import Regulariser
 from ..interface.io import resolve_existing_file_path
 
-# TODO: Add faceting functionality
-
 
 class DenHyperAIRI(Regulariser):
     """
@@ -51,7 +49,6 @@ class DenHyperAIRI(Regulariser):
         super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
         self._img_size = img_size
-        self._rank_ch_start = rank_ch_start
         self._rand_trans = rand_trans
         self._flip_table = (tuple(), (2,), (3,), (2, 3))
         self._ch_freq = ch_freq.flatten()
