@@ -85,9 +85,7 @@ class PrimalDualPrecond(Optimiser):
             self._cuda_timing = True
 
         # save dirty image and psf
-        self._meas_bp = self._meas_op.adjoint_op(self._meas).to(
-            self._meas_op.get_device()
-        )
+        self._meas_bp = self._meas_op.adjoint_op(self._meas)
         self._psf = self._meas_op.get_psf()
         self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
 
@@ -209,8 +207,7 @@ class PrimalDualPrecond(Optimiser):
             )
 
         heu_corr_factor = torch.sqrt(
-            self._meas_op.get_op_norm_prime_ch()
-            / self._meas_op.get_op_norm_ch()
+            self._meas_op.get_op_norm_prime_ch() / self._meas_op.get_op_norm_ch()
         )
         if not torch.allclose(
             heu_corr_factor,

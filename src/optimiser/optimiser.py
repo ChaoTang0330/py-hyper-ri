@@ -46,9 +46,18 @@ class Optimiser(ABC):
             device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
         ).view(1, -1, 1, 1)
         if isinstance(meas, torch.Tensor):
-            self._meas = meas.to(self._meas_op.get_data_type_meas())
+            self._meas = meas.to(
+                dtype=self._meas_op.get_data_type_meas(),
+                device=self._meas_op.get_device(),
+            )
         else:
-            self._meas = tuple(m.to(self._meas_op.get_data_type_meas()) for m in meas)
+            self._meas = tuple(
+                m.to(
+                    dtype=self._meas_op.get_data_type_meas(),
+                    device=self._meas_op.get_device(),
+                )
+                for m in meas
+            )
         self._save_pth = save_pth
         self._file_prefix = file_prefix
         self._rank_ch_num = len(meas)

@@ -85,7 +85,7 @@ class ForwardBackward(Optimiser):
 
         # save dirty image and psf
         self._meas_bp = self._meas_op_precise.adjoint_op(self._meas).to(
-            self._meas_op_precise.get_device()
+            device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
         )
         self._psf = self._meas_op_precise.get_psf()
         self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
