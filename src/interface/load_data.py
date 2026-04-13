@@ -261,6 +261,12 @@ def load_data_to_tensor(
         else:
             imaging_weight_physical.append(np.ones_like(u_physical[-1]))
             load_weight = False
+            data_weighting = False
+            verbose_print(
+                "INFO: no imaging weights are available in the data file.",
+                verbose_general and ch == 0,
+            )
+
 
     # communicate max_proj_baseline if in distributed mode
     if is_distributed:
