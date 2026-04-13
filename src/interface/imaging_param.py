@@ -349,9 +349,7 @@ def set_imaging_params_ri(
 
     # set path for saving results
     if not param_general.get("src_name", None):
-        param_general["src_name"] = os.path.splitext(
-            os.path.basename(param_general["data_file"])
-        )[0]
+        param_general["src_name"] = os.path.basename(param_general["data_file"])
     if not param_general.get("result_path", None):
         param_general["result_path"] = os.path.join(".", "results")
     param_optimiser["result_path"] = os.path.join(
