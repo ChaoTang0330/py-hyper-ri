@@ -199,10 +199,16 @@ class PrimalDualPrecond(Optimiser):
         if self._verbose:
             if self._is_distributed:
                 dist.barrier()
+            op_norm_ch_list = self._meas_op.get_op_norm_ch().squeeze().cpu().tolist()
+            if not isinstance(op_norm_ch_list, list):
+                op_norm_ch_list = [op_norm_ch_list]
+            heuristic_list = self._heuristic.squeeze().cpu().tolist()
+            if not isinstance(heuristic_list, list):
+                heuristic_list = [heuristic_list]
             print(
                 f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"op norm {self._meas_op.get_op_norm_ch().squeeze().cpu().tolist()}, "
-                f"heuristic noise level {self._heuristic.squeeze().cpu().tolist()}",
+                f"op norm [{', '.join(f'{val:.4e}' for val in op_norm_ch_list)}], "
+                f"heuristic noise level [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                 flush=True,
             )
 
@@ -221,10 +227,16 @@ class PrimalDualPrecond(Optimiser):
             if self._verbose:
                 if self._is_distributed:
                     dist.barrier()
+                heuristic_list = self._heuristic.squeeze().cpu().tolist()
+                if not isinstance(heuristic_list, list):
+                    heuristic_list = [heuristic_list]
+                heu_corr_factor_list = heu_corr_factor.squeeze().cpu().tolist()
+                if not isinstance(heu_corr_factor_list, list):
+                    heu_corr_factor_list = [heu_corr_factor_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after correction: {self._heuristic.squeeze().cpu().tolist()}, "
-                    f"correction factor {heu_corr_factor.squeeze().cpu().tolist()}",
+                    f"heuristic noise level after correction: [{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
+                    f"correction factor [{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
                     flush=True,
                 )
         if not np.isclose(self._heu_noise_scale, 1.0):
@@ -239,8 +251,11 @@ class PrimalDualPrecond(Optimiser):
                     )
                 if self._is_distributed:
                     dist.barrier()
+                heuristic_list = self._heuristic.squeeze().cpu().tolist()
+                if not isinstance(heuristic_list, list):
+                    heuristic_list = [heuristic_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after scaling: {self._heuristic.squeeze().cpu().tolist()}",
+                    f"heuristic noise level after scaling: [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                     flush=True,
                 )

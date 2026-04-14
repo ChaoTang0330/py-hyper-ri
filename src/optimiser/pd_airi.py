@@ -117,7 +117,7 @@ class PDAIRI(PrimalDualPrecond):
         if self._verbose and self._rank == 0:
             print(
                 f"INFO: measurement operator norm for primal-dual "
-                f"{self._meas_op.get_op_norm()}",
+                f"{self._meas_op.get_op_norm():.4e}",
                 flush=True,
             )
         self._meas_op.set_precond_weight(
@@ -148,7 +148,7 @@ class PDAIRI(PrimalDualPrecond):
         if self._is_distributed:
             dist.barrier()
         if self._verbose and self._rank == 0:
-            print(f"INFO: primal step size: {self._pr_step_size}")
+            print(f"INFO: primal step size: {self._pr_step_size:.4e}", flush=True)
             print("\n*************************************************", flush=True)
             print("********* STARTING ALGORITHM:   cAIRI   *********", flush=True)
             print("*************************************************", flush=True)
@@ -172,10 +172,13 @@ class PDAIRI(PrimalDualPrecond):
                     print("\nINFO: use normalised dirty peak as estimated", flush=True)
                 if self._is_distributed:
                     dist.barrier()
+                peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()
+                if not isinstance(peak_val_list, list):
+                    peak_val_list = [peak_val_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
-                    f"estimated image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    f"estimated image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}],",
                     flush=True,
                 )
         else:
@@ -188,9 +191,12 @@ class PDAIRI(PrimalDualPrecond):
                     )
                 if self._is_distributed:
                     dist.barrier()
+                peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()
+                if not isinstance(peak_val_list, list):
+                    peak_val_list = [peak_val_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    f"specified image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}],",
                     flush=True,
                 )
 
@@ -242,18 +248,18 @@ class PDAIRI(PrimalDualPrecond):
             # log
             if self._verbose and self._rank == 0:
                 print(
-                    f"\nIter {self._iter+1}: relative variation {self._im_rel_var},",
-                    f"data fidelity {curr_l2_error_sum}\ntimings: primal step {self._t_primal} sec,",
-                    f"dual step {self._t_dual} sec, iteration {self._t_iter} sec.",
+                    f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e},",
+                    f"data fidelity {curr_l2_error_sum:.3e}\ntimings: primal step {self._t_primal:#.3g} sec,",
+                    f"dual step {self._t_dual:#.3g} sec, iteration {self._t_iter:#.3g} sec.",
                     flush=True,
                 )
             if curr_l2_error_valid_all:
                 return True
         elif self._verbose and self._rank == 0:
             print(
-                f"\nIter {self._iter+1}: relative variation {self._im_rel_var}",
-                f"\ntimings: primal step {self._t_primal} sec, dual step {self._t_dual} sec,",
-                f"iteration {self._t_iter} sec.",
+                f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e}",
+                f"\ntimings: primal step {self._t_primal:#.3g} sec, dual step {self._t_dual:#.3g} sec,",
+                f"iteration {self._t_iter:#.3g} sec.",
                 flush=True,
             )
 
@@ -310,8 +316,8 @@ class PDAIRI(PrimalDualPrecond):
                     curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
                     curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
                     print(
-                        f"  Model image peak value: ch 1 {curr_peak_val_ch_1:.3f}, "
-                        f"ch end {curr_peak_val_ch_end:.3f}, "
+                        f"  Model image peak value: ch first {curr_peak_val_ch_1:#.3g}, "
+                        f"ch end {curr_peak_val_ch_end:#.3g}, "
                         f"max relative variation = {peak_var_max:.3e}",
                         flush=True,
                     )
@@ -342,7 +348,7 @@ class PDAIRI(PrimalDualPrecond):
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
             print(
-                f"Imaging finished in {self._t_total} sec, ",
+                f"Imaging finished in {self._t_total:#.4g} sec, ",
                 f"total number of iterations {self._iter+1}",
                 flush=True,
             )

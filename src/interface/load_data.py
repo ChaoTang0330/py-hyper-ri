@@ -285,13 +285,13 @@ def load_data_to_tensor(
     ):
         verbose_print(
             f"INFO: super resolution factor in the data file is "
-            f'{ms_specs["super_resolution"].item():.4f}, '
+            f'{ms_specs["super_resolution"].item():#.4g}, '
             f"while the user specified {super_resolution}.",
             verbose_general,
         )
         verbose_print(
             f"INFO: super resolution factor of "
-            f'{ms_specs["super_resolution"].item():.4f} will be used.',
+            f'{ms_specs["super_resolution"].item():#.4g} will be used.',
             verbose_general,
         )
         super_resolution = ms_specs["super_resolution"].item()
@@ -301,14 +301,14 @@ def load_data_to_tensor(
     spatial_bandwidth = 2 * data["max_proj_baseline"]
     if image_pixel_size:
         verbose_print(
-            f"INFO: user specified pixelsize: {image_pixel_size:.4e} arcsec.",
+            f"INFO: user specified pixelsize: {image_pixel_size:#.4g} arcsec.",
             verbose_general,
         )
         super_resolution = (
             (180.0 / np.pi) * 3600.0 / (image_pixel_size * spatial_bandwidth)
         )
         verbose_print(
-            f"INFO: corresponding to the super resolution factor: {super_resolution:.4f}.",
+            f"INFO: corresponding to the super resolution factor: {super_resolution:#.4g}.",
             verbose_general,
         )
     else:
@@ -316,8 +316,8 @@ def load_data_to_tensor(
             (180.0 / np.pi) * 3600.0 / (super_resolution * spatial_bandwidth)
         )
         verbose_print(
-            f"INFO: default pixelsize: {image_pixel_size:.4e} arcsec, "
-            f"that is {super_resolution:.4f} x nominal resolution.",
+            f"INFO: default pixelsize: {image_pixel_size:#.4g} arcsec, "
+            f"that is {super_resolution:#.4g} x nominal resolution.",
             verbose_general,
         )
 
@@ -419,12 +419,12 @@ def load_data_to_tensor(
                 if "weight_robustness" in data:
                     weight_robustness = data["weight_robustness"].item()
                     verbose_print(
-                        f"INFO: load weight_robustness from data file {weight_robustness}",
+                        f"INFO: load weight_robustness from data file {weight_robustness:#.4g}.",
                         verbose_general and ch == 0,
                     )
                 else:
                     verbose_print(
-                        f"INFO: weight_robustness {weight_robustness}",
+                        f"INFO: weight_robustness {weight_robustness:#.4g}",
                         verbose_general and ch == 0,
                     )
                     data["imaging_weight"][ch] = gen_imaging_weights(
@@ -493,7 +493,7 @@ def load_data_to_tensor(
         verbose_print(
             f"INFO: effective channel {ch + 1} loaded "
             f"{data['u'][ch - rank_eff_ch_start].shape[-1]} uv points, "
-            f"frequency {data['freqs'][ch]}.",
+            f"frequency {data['freqs'][ch]:#.4g} Hz.",
             verbose,
         )
 

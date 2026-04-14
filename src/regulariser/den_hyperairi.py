@@ -242,10 +242,10 @@ class DenHyperAIRI(Regulariser):
 
                     if self._verbose:
                         print(
-                            f"SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak[i]:.3e}, "
+                            f"INFO: SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak[i]:.3e}, "
                             f"using network: {os.path.basename(self._shelf[sigma_s])}, "
-                            f"peak range: [{peak_min[i].item():.3e}, {peak_max[i].item():.3e}], "
-                            f"scaling factor: {self._list_net_scaling[i]:.3e}",
+                            f"peak range: [{peak_min[i].item():#.3g}, {peak_max[i].item():#.3g}], "
+                            f"scaling factor: {self._list_net_scaling[i]:#.3g}",
                             flush=True,
                         )
 

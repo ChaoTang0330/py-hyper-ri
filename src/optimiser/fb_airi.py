@@ -157,10 +157,13 @@ class FBAIRI(ForwardBackward):
                     print("\nINFO: use normalised dirty peak as estimated", flush=True)
                 if self._is_distributed:
                     dist.barrier()
+                peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()
+                if not isinstance(peak_val_list, list):
+                    peak_val_list = [peak_val_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
-                    f"estimated image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    f"estimated image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
         else:
@@ -173,9 +176,12 @@ class FBAIRI(ForwardBackward):
                     )
                 if self._is_distributed:
                     dist.barrier()
+                peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()
+                if not isinstance(peak_val_list, list):
+                    peak_val_list = [peak_val_list]
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"specified image peak value {self._prev_peak_val.squeeze().cpu().tolist()}",
+                    f"specified image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
 
@@ -209,10 +215,10 @@ class FBAIRI(ForwardBackward):
         # log
         if self._verbose and self._rank == 0:
             print(
-                f"\nIter {self._iter+1}: relative variation {self._im_rel_var}",
-                f"\ntimings: gradient step {self._t_forward} sec,",
-                f"denoising step {self._t_backward} sec,"
-                f"iteration {self._t_iter} sec.",
+                f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e}",
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
+                f"denoising step {self._t_backward:#.3g} sec,"
+                f"iteration {self._t_iter:#.3g} sec.",
                 flush=True,
             )
 
@@ -274,8 +280,8 @@ class FBAIRI(ForwardBackward):
                     curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
                     curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
                     print(
-                        f"  Model image peak value: ch 1 {curr_peak_val_ch_1:.3f}, "
-                        f"ch end {curr_peak_val_ch_end:.3f}, "
+                        f"  Model image peak value: ch first {curr_peak_val_ch_1:#.3g}, "
+                        f"ch end {curr_peak_val_ch_end:#.3g}, "
                         f"max relative variation = {peak_var_max:.3e}",
                         flush=True,
                     )
@@ -308,7 +314,7 @@ class FBAIRI(ForwardBackward):
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
             print(
-                f"Imaging finished in {self._t_total} sec,",
+                f"Imaging finished in {self._t_total:#.4g} sec,",
                 f"total number of iterations {self._iter+1}",
                 flush=True,
             )

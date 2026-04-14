@@ -322,9 +322,10 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         if param_optimiser["verbose"] and torch.cuda.is_available():
             if use_distributed:
                 dist.barrier()
+            mem_allocated = torch.cuda.memory_allocated() / 1024 ** 3
             print(
                 f"INFO: rank {param_comm['rank']}: "
-                f"The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
+                f"The maximum GPU memory allocated {mem_allocated:.4f} GB, ",
                 flush=True,
             )
 

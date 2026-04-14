@@ -143,10 +143,13 @@ class FBSARA(ForwardBackward):
         self._reweighting_flag = False
 
         if self._is_distributed:
-                dist.barrier()
+            dist.barrier()
         if self._verbose:
             if self._rank == 0:
-                print(f"INFO: forward-backward step size (gamma): {self._gd_step_size}")
+                print(
+                    f"INFO: forward-backward step size (gamma): {self._gd_step_size:.4e}",
+                    flush=True,
+                )
                 if self._use_approx_meas_op:
                     print(
                         "INFO: use approximate measurement operator for reconstruction",
@@ -154,27 +157,36 @@ class FBSARA(ForwardBackward):
                     )
             if self._is_distributed:
                 dist.barrier()
-            reg_param = self._heuristic/3.0/self._gd_step_size
+            reg_param = self._heuristic / 3.0 / self._gd_step_size
+            reg_param_list = reg_param.squeeze().cpu().tolist()
+            if not isinstance(reg_param_list, list):
+                reg_param_list = [reg_param_list]
             print(
                 f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"regularization parameter (lambda): {reg_param.squeeze().cpu().tolist()}",
+                f"regularization parameter (lambda): [{', '.join(f'{val:.4e}' for val in reg_param_list)}]",
                 flush=True,
             )
             if self._is_distributed:
                 dist.barrier()
+            sfth_level_list = sfth_level.squeeze().cpu().tolist()
+            if not isinstance(sfth_level_list, list):
+                sfth_level_list = [sfth_level_list]
             print(
                 f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"heuristic soft threolding level: {sfth_level.squeeze().cpu().tolist()}",
+                f"heuristic soft threolding level: [{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
                 flush=True,
             )
             if self._is_distributed:
                 dist.barrier()
+            wl_noise_floor_list = wl_noise_floor.squeeze().cpu().tolist()
+            if not isinstance(wl_noise_floor_list, list):
+                wl_noise_floor_list = [wl_noise_floor_list]
             print(
                 f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"estimated noise floor level in wavelet coeeficients: {wl_noise_floor.squeeze().cpu().tolist()}",
+                f"estimated noise floor level in wavelet coeeficients: [{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]",
                 flush=True,
             )
-            
+
             print("\n*************************************************", flush=True)
             print("********* STARTING ALGORITHM:   uSARA   *********", flush=True)
             print("*************************************************", flush=True)
@@ -225,9 +237,9 @@ class FBSARA(ForwardBackward):
                 f"Cumulative itr: {self._iter+1},  re-weighting itr: {self._iter_outer+1},",
                 f"forward-backward itr: {self._iter_inner+1},",
                 f"relative variation {self._im_rel_var:.3e}",
-                f"\ntimings: gradient step {self._t_forward:.3g} sec,",
-                f"denoising step {self._t_backward:.3g} sec,",
-                f"iteration {self._t_iter:.3g} sec.\n",
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
+                f"denoising step {self._t_backward:#.3g} sec,",
+                f"iteration {self._t_iter:#.3g} sec.\n",
                 flush=True,
             )
 
@@ -254,11 +266,11 @@ class FBSARA(ForwardBackward):
                 )
                 print(
                     f"INFO: Re-weighting iteration {self._iter_outer+1}",
-                    f"completed in {self._t_iter_outer:.3g} sec.",
+                    f"completed in {self._t_iter_outer:#.4g} sec.",
                     flush=True,
                 )
                 print(
-                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer:.3g}",
+                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer:#.3g}",
                     flush=True,
                 )
 
@@ -340,7 +352,7 @@ class FBSARA(ForwardBackward):
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
             print(
-                f"Imaging finished in {self._t_total} sec,",
+                f"Imaging finished in {self._t_total:#.4g} sec,",
                 f"total number of iterations {self._iter + 1}",
                 flush=True,
             )
@@ -376,4 +388,3 @@ class FBSARA(ForwardBackward):
                     result_spec_idx,
                     overwrite=True,
                 )
-
