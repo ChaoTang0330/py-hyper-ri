@@ -319,8 +319,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         # finalisation
         optimiser.finalisation()
 
-        dist.barrier()
         if param_optimiser["verbose"] and torch.cuda.is_available():
+            if use_distributed:
+                dist.barrier()
             print(
                 f"INFO: rank {param_comm['rank']}: "
                 f"The maximum GPU memory allocated {torch.cuda.memory_allocated()}",
