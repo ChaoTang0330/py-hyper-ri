@@ -174,13 +174,13 @@ def set_imaging_params_ri(
         list_devices.append("xpu")
     list_devices.append("cpu")
     measop_device_type = param_general.get("meas_device", None)
-    proxop_device_type = param_general.get("prox_device", None)
+    regulariser_device_type = param_general.get("regulariser_device", None)
     if measop_device_type in list_devices:
         param_measop["device"] = torch.device(measop_device_type)
     else:
         param_measop["device"] = torch.device("cpu")
-    if proxop_device_type in list_devices:
-        param_proxop["device"] = torch.device(proxop_device_type)
+    if regulariser_device_type in list_devices:
+        param_proxop["device"] = torch.device(regulariser_device_type)
     else:
         param_proxop["device"] = torch.device(list_devices[0])
     # distributed settings
@@ -222,7 +222,7 @@ def set_imaging_params_ri(
         param_measop["dtype"] = torch.float
     else:
         param_measop["dtype"] = torch.double
-    if param_general.get("prox_dtype", None) and param_general.get("prox_dtype") in [
+    if param_general.get("regulariser_dtype", None) and param_general.get("regulariser_dtype") in [
         "double",
         "float64",
     ]:

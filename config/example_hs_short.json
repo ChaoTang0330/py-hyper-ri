@@ -38,8 +38,8 @@
             "ncpus": [],
             "meas_device": "cpu",
             "meas_dtype": "double",
-            "prox_device": "cpu",
-            "prox_dtype": "single"
+            "regulariser_device": "cpu",
+            "regulariser_dtype": "single"
         },
         "nufft": {
             "nufft_comment_1": "nufft settings",

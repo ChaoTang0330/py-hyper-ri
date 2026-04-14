@@ -115,7 +115,7 @@ def test_set_imaging_params_ri_device_fallback_cpu(tmp_path: Path) -> None:
         {
             "result_path": str(tmp_path),
             "meas_device": "not-a-device",
-            "prox_device": "also-invalid",
+            "regulariser_device": "also-invalid",
         }
     )
 
@@ -132,7 +132,7 @@ def test_set_imaging_params_ri_dtype_fallbacks(tmp_path: Path) -> None:
         {
             "result_path": str(tmp_path),
             "meas_dtype": "invalid-dtype",
-            "prox_dtype": "invalid-dtype",
+            "regulariser_dtype": "invalid-dtype",
         }
     )
 

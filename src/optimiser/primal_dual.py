@@ -200,7 +200,7 @@ class PrimalDualPrecond(Optimiser):
             if self._is_distributed:
                 dist.barrier()
             print(
-                f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                 f"op norm {self._meas_op.get_op_norm_ch().squeeze().cpu().tolist()}, "
                 f"heuristic noise level {self._heuristic.squeeze().cpu().tolist()}",
                 flush=True,
@@ -222,7 +222,7 @@ class PrimalDualPrecond(Optimiser):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                     f"heuristic noise level after correction: {self._heuristic.squeeze().cpu().tolist()}, "
                     f"correction factor {heu_corr_factor.squeeze().cpu().tolist()}",
                     flush=True,
@@ -240,7 +240,7 @@ class PrimalDualPrecond(Optimiser):
                 if self._is_distributed:
                     dist.barrier()
                 print(
-                    f"INFO: channel {self._ch_start + 1} - {self._ch_start + self._rank_ch_num}, "
+                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
                     f"heuristic noise level after scaling: {self._heuristic.squeeze().cpu().tolist()}",
                     flush=True,
                 )

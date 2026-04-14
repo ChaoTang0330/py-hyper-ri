@@ -525,7 +525,7 @@ class FBHyperAIRI(ForwardBackward):
         # log frequency, x
         prec_mask = img_blur < self._spec_idx_prec
         log_ch_freq = torch.log(
-            self._ch_freq[:, self._ch_start : self._ch_start + self._rank_ch_num, :, :]
+            self._ch_freq[:, self._rank_ch_start : self._rank_ch_start + self._rank_ch_num, :, :]
         )
         log_ch_freq = log_ch_freq.expand_as(img_blur)
         log_ch_freq = log_ch_freq.masked_fill(prec_mask, 0.0)

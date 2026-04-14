@@ -326,7 +326,7 @@ class PDAIRI(PrimalDualPrecond):
                 self._peak_tol = max(
                     self._peak_tol * self._peak_tol_step, self._peak_tol_min
                 )
-                self._peak_val_range = self._regulariser.update(
+                self._peak_val_range = self._regulariser_prime.update(
                     ch_heuristic=self._heuristic,
                     ch_peak_est=self._prev_peak_val,
                 )
