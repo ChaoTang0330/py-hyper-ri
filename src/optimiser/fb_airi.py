@@ -109,7 +109,7 @@ class FBAIRI(ForwardBackward):
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
-            print("\nINFO: Initialisation AIRI optimiser...", flush=True)
+            print("\nINFO: initialise AIRI optimiser...", flush=True)
 
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
@@ -154,7 +154,7 @@ class FBAIRI(ForwardBackward):
             )
             if self._verbose:
                 if self._rank == 0:
-                    print("\nINFO: use normalised dirty peak as estimated", flush=True)
+                    print("INFO: use normalised dirty peak as estimated", flush=True)
                 if self._is_distributed:
                     dist.barrier()
                 peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()

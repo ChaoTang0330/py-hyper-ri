@@ -110,7 +110,7 @@ class FBSARA(ForwardBackward):
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
-            print("\nINFO: Initialisation uSARA optimiser...", flush=True)
+            print("\nINFO: initialise uSARA optimiser...", flush=True)
 
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()

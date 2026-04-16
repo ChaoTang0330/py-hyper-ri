@@ -106,7 +106,7 @@ class PDAIRI(PrimalDualPrecond):
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
-            print("\nINFO: Initialisation cAIRI optimiser...", flush=True)
+            print("\nINFO: initialise cAIRI optimiser...", flush=True)
 
         # calculate step size
         self._meas_op.set_real_flag(False)
@@ -169,7 +169,7 @@ class PDAIRI(PrimalDualPrecond):
             )
             if self._verbose:
                 if self._rank == 0:
-                    print("\nINFO: use normalised dirty peak as estimated", flush=True)
+                    print("INFO: use normalised dirty peak as estimated", flush=True)
                 if self._is_distributed:
                     dist.barrier()
                 peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()

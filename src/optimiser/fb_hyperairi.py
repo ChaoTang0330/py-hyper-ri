@@ -142,7 +142,7 @@ class FBHyperAIRI(ForwardBackward):
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
-            print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
+            print("\nINFO: initialise HyperAIRI optimiser...", flush=True)
 
         # step size
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
@@ -202,7 +202,7 @@ class FBHyperAIRI(ForwardBackward):
             )
             if self._verbose:
                 if self._rank == 0:
-                    print("\nINFO: use normalised dirty peak as estimated", flush=True)
+                    print("INFO: use normalised dirty peak as estimated", flush=True)
                 if self._is_distributed:
                     dist.barrier()
                 peak_val_list = self._prev_peak_val.squeeze().cpu().tolist()
