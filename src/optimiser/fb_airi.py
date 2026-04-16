@@ -309,7 +309,7 @@ class FBAIRI(ForwardBackward):
         This method prints final log information if `verbose` is True, and saves
         the result model and residual images.
         """
-        if self._verbose:
+        if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)

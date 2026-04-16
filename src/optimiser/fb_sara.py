@@ -186,10 +186,12 @@ class FBSARA(ForwardBackward):
                 f"estimated noise floor level in wavelet coeeficients: [{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]",
                 flush=True,
             )
-
-            print("\n*************************************************", flush=True)
-            print("********* STARTING ALGORITHM:   uSARA   *********", flush=True)
-            print("*************************************************", flush=True)
+            if self._is_distributed:
+                dist.barrier()
+            if self._rank == 0:
+                print("\n*************************************************", flush=True)
+                print("********* STARTING ALGORITHM:   uSARA   *********", flush=True)
+                print("*************************************************", flush=True)
         if self._is_distributed:
             dist.barrier()
 
@@ -199,7 +201,7 @@ class FBSARA(ForwardBackward):
 
         This method resets the timer at the start of each reweighting loop.
         """
-        if self._iter_inner == 0:
+        if self._iter_inner == 0 and self._rank == 0 and self._verbose:
             print(
                 "\n********************* Reweighting,",
                 f"start major cycle {self._iter_outer+1}",

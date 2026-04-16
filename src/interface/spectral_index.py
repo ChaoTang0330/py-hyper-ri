@@ -89,7 +89,7 @@ def fit_clean_beam(psf, verbose=True):
         theta_fit = theta_fit + np.pi
     if verbose:
         print(
-            "INFO: Clean beam fitted with",
+            "INFO: clean beam fitted with",
             f"sigma_x = {sigma_x_fit:.6f},",
             f"sigma_y = {sigma_y_fit:.6f},",
             f"theta = {theta_fit:.6f}",
