@@ -36,10 +36,12 @@
         "computing": {
             "computing_comment_1": "computing resources",
             "ncpus": [],
-            "meas_device": "cpu",
+            "meas_device": "cuda",
             "meas_dtype": "double",
-            "regulariser_device": "cpu",
-            "regulariser_dtype": "single"
+            "regulariser_device": "cuda",
+            "regulariser_dtype": "single",
+            "dist_backend": "nccl",
+            "dist_init_method": "env://"
         },
         "nufft": {
             "nufft_comment_1": "nufft settings",
@@ -49,10 +51,63 @@
     },
     {
         "__comment": "Denoisers",
+        "airi": {
+            "denoiser_comment_1": "airi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true
+        },
+        "airi_default": {
+            "denoiser_comment_2": "airi default params",
+            "approx_meas_op": true,
+            "im_min_itr": 100,
+            "im_max_itr": 3000,
+            "im_var_tol": 1e-5,
+            "itr_save": 8000,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1
+        },
+        "cairi": {
+            "denoiser_comment_1": "airi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
+            "precond_flag": true,
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true
+        },
+        "cairi_default": {
+            "denoiser_comment_2": "airi default params",
+            "im_min_itr": 100,
+            "im_max_itr": 3000,
+            "im_var_tol": 1e-5,
+            "itr_save": 8000,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1
+        },
+        "usara": {
+            "denoiser_comment_1": "usara params",
+            "heu_reg_param_scale": 1.0,
+            "reweighting": true
+        },
+        "usara_default": {
+            "denoiser_comment_2": "usara default params",
+            "approx_meas_op": true,
+            "im_min_itr": 20,
+            "im_max_itr": 2000,
+            "im_max_outer_itr": 20,
+            "im_var_tol": 1e-5,
+            "im_var_outer_tol": 1e-4,
+            "reweighting_save": false
+        },
         "hyperairi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_hyper_mix.csv",
+            "dnn_shelf_path": "./airi_denoisers/shelf_hyperairi_mix.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
             "dnn_apply_transform": true
@@ -65,7 +120,7 @@
             "im_var_tol": 1e-5,
             "itr_save": 5000,
             "dnn_adaptive_peak_tol_max": 1e-1,
-            "dnn_adaptive_peak_tol_min": 1e-3,
+            "dnn_adaptive_peak_tol_min": 1e-5,
             "dnn_adaptive_peak_tol_step": 0.1
         }
     }

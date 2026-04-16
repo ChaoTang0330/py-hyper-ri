@@ -31,10 +31,10 @@
         },
         "computing": {
             "computing_comment_1": "computing resources",
-            "meas_device": "cpu",
-            "meas_dtype": "single",
-            "prox_device": "cpu",
-            "prox_dtype": "single"
+            "meas_device": "cuda",
+            "meas_dtype": "double",
+            "regulariser_device": "cuda",
+            "regulariser_dtype": "single"
         },
         "nufft": {
             "nufft_comment_1": "nufft settings",
@@ -47,18 +47,18 @@
         "airi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_oaid.csv",
+            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
             "dnn_apply_transform": true
         },
         "airi_default": {
             "denoiser_comment_2": "airi default params",
-            "approx_meas_op": false,
+            "approx_meas_op": true,
             "im_min_itr": 100,
             "im_max_itr": 6000,
             "im_var_tol": 5e-5,
-            "itr_save": 2000,
+            "itr_save": 8000,
             "dnn_adaptive_peak_tol_max": 1e-1,
             "dnn_adaptive_peak_tol_min": 1e-3,
             "dnn_adaptive_peak_tol_step": 0.1
@@ -66,7 +66,7 @@
         "cairi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_oaid.csv",
+            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
             "precond_flag": true,
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
@@ -77,7 +77,7 @@
             "im_min_itr": 100,
             "im_max_itr": 4000,
             "im_var_tol": 5e-5,
-            "itr_save": 2000,
+            "itr_save": 8000,
             "dnn_adaptive_peak_tol_max": 1e-1,
             "dnn_adaptive_peak_tol_min": 1e-3,
             "dnn_adaptive_peak_tol_step": 0.1
@@ -95,7 +95,7 @@
             "im_max_outer_itr": 20,
             "im_var_tol": 1e-5,
             "im_var_outer_tol": 1e-4,
-            "reweighting_save": true
+            "reweighting_save": false
         }
     }
 ]
