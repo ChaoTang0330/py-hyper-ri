@@ -299,7 +299,7 @@ def set_imaging_params_ri(
         )
 
         # specific parameters for AIRI
-        if param_optimiser["algorithm"] == "airi":
+        if param_optimiser["algorithm"] in ["airi", "hyperairi"]:
             param_optimiser["approx_meas_op"] = param_general.get(
                 "approx_meas_op", False
             )
@@ -338,12 +338,13 @@ def set_imaging_params_ri(
             param_optimiser["im_var_outer_tol"] = 1e-3
 
         # specific parameters for uSARA
-        if param_optimiser["algorithm"] == "usara":
+        if param_optimiser["algorithm"] in ["usara"]:
             param_optimiser["approx_meas_op"] = param_general.get(
                 "approx_meas_op", False
             )
 
     # parameters shared by constrained algorithms
+    param_optimiser["precond_flag"] = False
     if param_optimiser["algorithm"] in ["cairi"]:
         param_optimiser["precond_flag"] = param_general.get("precond_flag", True)
 

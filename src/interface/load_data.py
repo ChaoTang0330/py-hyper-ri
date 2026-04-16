@@ -247,7 +247,7 @@ def load_data_to_tensor(
         if data_ch and "data_I" in data_ch:
             y_physical.append(data_ch["data_I"].flatten())
 
-        if data_ch and "weightsNat" in data_ch:
+        if data_ch and "weightsNat" in data_ch and data_ch["weightsNat"]:
             natural_weight_physical.append(data_ch["weightsNat"])
             if natural_weight_physical[-1].size == 1:
                 natural_weight_physical[-1] = natural_weight_physical[
@@ -256,22 +256,30 @@ def load_data_to_tensor(
         else:
             natural_weight_physical.append(np.ones_like(u_physical[-1]))
 
-        if load_weight and data_ch and "weightsImg" in data_ch:
-            imaging_weight_physical.append(data_ch["weightsImg"])
-        else:
-            imaging_weight_physical.append(np.ones_like(u_physical[-1]))
-            load_weight = False
-            data_weighting = False
-            verbose_print(
-                "INFO: no imaging weights are available in the data file.",
-                verbose_general and ch == 0,
-            )
-
+        if load_weight:
+            if data_ch and "weightsImg" in data_ch and data_ch["weightsImg"]:
+                imaging_weight_physical.append(data_ch["weightsImg"])
+            else:
+                imaging_weight_physical = []
+                load_weight = False
+                data_weighting = False
+                verbose_print(
+                    "INFO: no imaging weights are available in the data file.",
+                    verbose_general and ch == 0,
+                )
 
     # communicate max_proj_baseline if in distributed mode
     if is_distributed:
+        all_reduce_device = device
+        dist_backend = dist.get_backend()
+        if dist_backend == "nccl":
+            all_reduce_device = torch.device("cuda")
+        elif dist_backend == "xccl":
+            all_reduce_device = torch.device("xpu")
+        else:
+            all_reduce_device = torch.device("cpu")
         max_proj_baseline = torch.tensor(
-            max_proj_baseline, dtype=torch.float64, device=device
+            max_proj_baseline, dtype=torch.float64, device=all_reduce_device
         )
         dist.all_reduce(max_proj_baseline, op=dist.ReduceOp.MAX)
         max_proj_baseline = max_proj_baseline.cpu().item()
@@ -380,17 +388,18 @@ def load_data_to_tensor(
             )
 
             # concatenate image weights
-            data["imaging_weight"][ch] = torch.cat(
-                (
-                    data["imaging_weight"][ch],
-                    torch.tensor(
-                        imaging_weight_physical[ch_physical],
-                        dtype=dtype,
-                        device=device,
-                    ).view(1, 1, -1),
-                ),
-                dim=-1,
-            )
+            if load_weight:
+                data["imaging_weight"][ch] = torch.cat(
+                    (
+                        data["imaging_weight"][ch],
+                        torch.tensor(
+                            imaging_weight_physical[ch_physical],
+                            dtype=dtype,
+                            device=device,
+                        ).view(1, 1, -1),
+                    ),
+                    dim=-1,
+                )
 
             # convert visibilities to torch tensor
             if y_physical:
@@ -441,6 +450,7 @@ def load_data_to_tensor(
                 "INFO: imaging weights will not be applied.",
                 verbose_general and ch == 0,
             )
+            data["imaging_weight"][ch] = torch.ones(1, 1, 1, dtype=dtype, device=device)
 
         # calculate preconditioning weights if needed
         if precond_weighting:
@@ -480,7 +490,10 @@ def load_data_to_tensor(
         # check dimensions
         assert (
             data["u"][ch].shape == data["natural_weight"][ch].shape
-            and data["u"][ch].shape == data["imaging_weight"][ch].shape
+            or data["natural_weight"][ch].numel() == 1
+        ) and (
+            data["u"][ch].shape == data["imaging_weight"][ch].shape
+            or data["imaging_weight"][ch].numel() == 1
         ), (
             f'dimensions do not match: u -> {data["u"][ch].shape}, '
             f'natural_weight -> {data["natural_weight"][ch].shape}, '
