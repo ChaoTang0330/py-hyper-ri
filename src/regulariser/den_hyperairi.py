@@ -46,7 +46,12 @@ class DenHyperAIRI(Regulariser):
             dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
-        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
+        super().__init__(
+            rank_num_ch=rank_num_ch,
+            rank_ch_start=rank_ch_start,
+            device=device,
+            dtype=dtype,
+        )
 
         self._img_size = img_size
         self._rand_trans = rand_trans
@@ -72,9 +77,7 @@ class DenHyperAIRI(Regulariser):
             shelf_reader = csv.reader(shelf_file, delimiter=",")
             for row in shelf_reader:
                 sigma = float(row[0])
-                resolved_net_path = resolve_existing_file_path(
-                    row[1], project_root
-                )
+                resolved_net_path = resolve_existing_file_path(row[1], project_root)
                 self._shelf[sigma] = resolved_net_path
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
@@ -103,7 +106,8 @@ class DenHyperAIRI(Regulariser):
         if self._rank == 0:
             x_from_left = x_to_left
         elif self._world_size > 1:
-            # x_to_left = x_to_left.clone()
+            x_to_left = x_to_left.to(self._dist_device)
+            x_from_left = x_from_left.to(self._dist_device)
             # communicate with left rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_left, self._rank - 1),
@@ -114,7 +118,8 @@ class DenHyperAIRI(Regulariser):
         if self._rank == self._world_size - 1:
             x_from_right = x_to_right
         elif self._world_size > 1:
-            # x_to_right = x_to_right.clone()
+            x_to_right = x_to_right.to(self._dist_device)
+            x_from_right = x_from_right.to(self._dist_device)
             # communicate with right rank
             list_p2p_op = [
                 dist.P2POp(dist.isend, x_to_right, self._rank + 1),
@@ -130,13 +135,15 @@ class DenHyperAIRI(Regulariser):
                 if left_rank_req is not None:
                     for req in left_rank_req:
                         req.wait()
-                net_input = torch.cat([x_from_left, x[:, i : i + 2, :, :]], dim=1)
+                net_input = torch.cat(
+                    [x_from_left.to(self._device), x[:, i : i + 2, :, :]], dim=1
+                )
             elif i == self._rank_num_ch - 1:
                 if right_rank_req is not None:
                     for req in right_rank_req:
                         req.wait()
                 net_input = torch.cat(
-                    [x[:, i - 1 : i + 1, :, :], x_from_right], dim=1
+                    [x[:, i - 1 : i + 1, :, :], x_from_right.to(self._device)], dim=1
                 )
             else:
                 net_input = x[:, i - 1 : i + 2, :, :]

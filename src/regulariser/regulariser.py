@@ -48,6 +48,16 @@ class Regulariser(ABC):
         if self._is_dist:
             self._rank = dist.get_rank()
             self._world_size = dist.get_world_size()
+            # device for p2p communication
+            dist_backend = dist.get_backend()
+            if dist_backend == "nccl":
+                self._dist_device = torch.device("cuda")
+            elif dist_backend == "xccl":
+                self._dist_device = torch.device("xpu")
+            else:
+                # for gloo and mpi
+                self._dist_device = torch.device("cpu")
+            
 
     @abstractmethod
     def __call__(self, x: torch.Tensor) -> Any:
