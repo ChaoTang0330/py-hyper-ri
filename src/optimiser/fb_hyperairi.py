@@ -29,6 +29,7 @@ class FBHyperAIRI(ForwardBackward):
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenHyperAIRI,
+        meas_op_approx: Optional[MeasOpHyperspectral] = None,
         rank_ch_start: int = 0,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
@@ -86,8 +87,9 @@ class FBHyperAIRI(ForwardBackward):
         super().__init__(
             meas,
             ch_freq,
-            meas_op,
+            meas_op_approx if meas_op_approx is not None else meas_op,
             regulariser,
+            meas_op_precise=meas_op,
             heu_noise_scale=heu_noise_scale,
             im_max_itr=im_max_itr,
             save_pth=save_pth,
@@ -143,7 +145,7 @@ class FBHyperAIRI(ForwardBackward):
             print("\nINFO: Initialisation HyperAIRI optimiser...", flush=True)
 
         # step size
-        self._gd_step_size = 1.98 / self._meas_op.get_op_norm()
+        self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
         # estimate peak value
         self._estimate_channel_wise_peak_val()
