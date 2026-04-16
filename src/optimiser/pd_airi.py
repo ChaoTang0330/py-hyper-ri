@@ -226,13 +226,12 @@ class PDAIRI(PrimalDualPrecond):
 
         # stop criteria
         if self._iter + 1 >= self._im_min_itr and self._im_rel_var < self._im_var_tol:
-            curr_meas_bp = self._meas_op.forward_op(self._model)
+            curr_meas_model = self._meas_op.forward_op(self._model)
             curr_l2_error_sq = torch.stack(
                 [
-                    torch.sum(torch.abs(self._meas[i] - curr_meas_bp[i]) ** 2)
+                    torch.sum(torch.abs(self._meas[i] - curr_meas_model[i]) ** 2)
                     for i in range(self._rank_ch_num)
                 ],
-                device=self._meas_op.get_device(),
             )
             curr_l2_error_sum = curr_l2_error_sq.sum()
             curr_l2_error_valid = (
