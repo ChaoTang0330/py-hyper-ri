@@ -56,6 +56,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         "local_rank": env_int("LOCAL_RANK", 0),
         "local_world_size": env_int("LOCAL_WORLD_SIZE", 1),
         "node_rank": env_int("NODE_RANK", 0),
+        "rank_device_id": (
+            env_int("RANK_DEVICE_ID", 0) if torch.cuda.is_available() else None
+        ),
     }
     use_distributed = param_comm["world_size"] > 1
 
@@ -72,6 +75,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             init_method=param_optimiser["dist_init_method"],
             rank=param_comm["rank"],
             world_size=param_comm["world_size"],
+            device_id=param_comm["rank_device_id"],
         )
 
     # Small header
@@ -79,7 +83,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         dist.barrier()
         if param_comm["rank"] == 0:
             print(
-                f"INFO: torch.distributed initialized with backend={dist.get_backend()}",
+                f"INFO: torch.distributed initialized with backend {dist.get_backend()}",
                 flush=True,
             )
             print(
@@ -100,6 +104,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         weight_type=param_measop["weight_type"],
         weight_gridsize=param_measop["weight_gridsize"],
         weight_robustness=param_measop["weight_robustness"],
+        precond_weighting=param_optimiser["precond_flag"],
         dtype=param_measop["dtype"],
         device=torch.device("cpu"),
         verbose=param_optimiser["verbose"],
@@ -201,6 +206,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             ch_freq=data["freqs"],
             meas_op=meas_op,
             regulariser=denoiser_airi,
+            rank_ch_start=data["rank_eff_ch_start"],
             meas_op_approx=meas_op_approx,
             im_min_itr=param_optimiser["im_min_itr"],
             im_max_itr=param_optimiser["im_max_itr"],
@@ -222,6 +228,8 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         denoiser_airi = DenAIRI(
             param_proxop["dnn_shelf_path"],
             rand_trans=param_proxop["dnn_apply_transform"],
+            rank_num_ch=len(data["y"]),
+            rank_ch_start=data["rank_eff_ch_start"],
             device=param_proxop["device"],
             dtype=param_proxop["dtype"],
             verbose=param_proxop["verbose"],
@@ -260,7 +268,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
     elif param_optimiser["algorithm"] == "hyperairi":
         # prepare prior
-        prox_op_hyperairi = DenHyperAIRI(
+        den_hyperairi = DenHyperAIRI(
             img_size=param_optimiser["img_size"],
             rank_num_ch=len(data["y"]),
             rank_ch_start=data["rank_eff_ch_start"],
@@ -277,9 +285,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             meas=data["y"],
             ch_freq=data["freqs"],
             meas_op=meas_op,
-            prox_op=prox_op_hyperairi,
-            ch_start=data["rank_eff_ch_start"],
-            meas_op_approx=None,
+            regulariser=den_hyperairi,
+            meas_op_approx=meas_op_approx,
+            rank_ch_start=data["rank_eff_ch_start"],
             im_min_itr=param_optimiser["im_min_itr"],
             im_max_itr=param_optimiser["im_max_itr"],
             im_var_tol=param_optimiser["im_var_tol"],
@@ -322,10 +330,10 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         if param_optimiser["verbose"] and torch.cuda.is_available():
             if use_distributed:
                 dist.barrier()
-            mem_allocated = torch.cuda.memory_allocated() / 1024 ** 3
+            mem_allocated = torch.cuda.memory_allocated() / 1024**3
             print(
                 f"INFO: rank {param_comm['rank']}: "
-                f"The maximum GPU memory allocated {mem_allocated:.4f} GB, ",
+                f"The maximum GPU memory allocated {mem_allocated:.4f} GB.",
                 flush=True,
             )
 
