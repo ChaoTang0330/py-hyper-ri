@@ -2,12 +2,12 @@
 
 import torch
 
-from src.regulariser.prox_sara import ProxSARAPos
+from src.regulariser.prox_usara import ProxSARAPos
 
 from .regulariser_helpers import make_image_tensor, make_positive_threshold
 
 
-def create_prox_sara(
+def create_prox_usara(
     channels: int,
     img_size: tuple[int, int] = (32, 32),
     dtype: torch.dtype = torch.float32,
@@ -35,7 +35,7 @@ def create_prox_sara(
 
 def test_sara_enforces_positivity_constraint() -> None:
     """SARA prox with positivity must output nonnegative tensor."""
-    reg, _ = create_prox_sara(channels=1, dtype=torch.float32, seed=3)
+    reg, _ = create_prox_usara(channels=1, dtype=torch.float32, seed=3)
     x = -torch.ones((1, 1, 32, 32), dtype=torch.float32)
     y = reg(x)
 
@@ -44,7 +44,7 @@ def test_sara_enforces_positivity_constraint() -> None:
 
 def test_sara_update_populates_weights() -> None:
     """Calling update should populate per-dictionary reweighting tensors."""
-    reg, x = create_prox_sara(channels=2, dtype=torch.float32, seed=7)
+    reg, x = create_prox_usara(channels=2, dtype=torch.float32, seed=7)
     reg.update(x)
 
     assert len(reg._weights) > 0

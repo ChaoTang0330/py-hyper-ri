@@ -11,7 +11,7 @@ from .test_regulariser_den_airi import create_den_airi
 from .test_regulariser_den_hyperairi import create_den_hyperairi
 from .test_regulariser_prox_ellipsoid import create_prox_ellipsoid
 from .test_regulariser_prox_positivity import create_prox_positivity
-from .test_regulariser_prox_sara import create_prox_sara
+from .test_regulariser_prox_usara import create_prox_usara
 
 
 REGULARISERS = ["positivity", "sara", "denairi", "ellipsoid", "denhyperairi"]
@@ -28,7 +28,7 @@ def _build_regulariser(
     if regulariser_type == "positivity":
         return create_prox_positivity(channels=channels, dtype=dtype, seed=seed)
     if regulariser_type == "sara":
-        return create_prox_sara(channels=channels, dtype=dtype, seed=seed)
+        return create_prox_usara(channels=channels, dtype=dtype, seed=seed)
     if regulariser_type == "denairi":
         return create_den_airi(channels=channels, dtype=dtype, seed=seed)
     if regulariser_type == "ellipsoid":

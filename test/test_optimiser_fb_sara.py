@@ -6,7 +6,7 @@ from src.optimiser import FBSARA
 
 from .optimiser_helpers import make_test_meas
 from .test_meas_op_hs import build_hs_op
-from .test_regulariser_prox_sara import create_prox_sara
+from .test_regulariser_prox_usara import create_prox_usara
 
 
 def test_fb_sara_build(tmp_path: Path) -> None:
@@ -14,7 +14,7 @@ def test_fb_sara_build(tmp_path: Path) -> None:
     channels = 2
     op = build_hs_op(channels=channels, n_samples=1024, img_size=(64, 64))
     meas, ch_freq = make_test_meas(op, channels=channels)
-    reg, _ = create_prox_sara(channels=channels, img_size=(64, 64))
+    reg, _ = create_prox_usara(channels=channels, img_size=(64, 64))
 
     optimiser = FBSARA(
         meas=meas,
