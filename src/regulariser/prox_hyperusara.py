@@ -8,13 +8,9 @@ import math
 import torch
 import torch.distributed as dist
 import ptwt
+import pywt
 
 from .regulariser import Regulariser
-
-WaveletCoeff = List[
-    Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
-]
-WaveletDictCoeff = List[Union[WaveletCoeff, torch.Tensor]]
 
 
 class ProxHyperSARAPos(Regulariser):
@@ -82,12 +78,29 @@ class ProxHyperSARAPos(Regulariser):
 
         assert wl_dict, "Wavelet dictionary cannot be empty."
         for basis in wl_dict:
-            assert basis in ptwt.wavelist(), f"Unsupported wavelet basis: {basis}"
+            if basis != "dirac":
+                assert basis in pywt.wavelist(
+                    kind="discrete"
+                ), f"Unsupported wavelet basis: {basis}"
 
         self._img_size = img_size
         self._rank_num_ch = rank_num_ch
+        if sfth_val is not None:
+            assert (
+                sfth_val.numel() == 1
+            ), "Soft thresholding value must be a single scalar for Hyper-uSARA prox."
+            sfth_val = sfth_val.reshape(1, 1, 1).to(
+                device=self._device, dtype=self._dtype
+            )
         self._sfth_val = sfth_val
         self._dec_lev = dec_lev
+        if wl_noise_floor is not None:
+            assert (
+                wl_noise_floor.numel() == 1
+            ), "Noise floor level must be a single scalar for Hyper-uSARA prox."
+            wl_noise_floor = wl_noise_floor.reshape(1, 1, 1).to(
+                device=self._device, dtype=self._dtype
+            )
         self._wl_noise_floor = wl_noise_floor
         self._mode = mode
         self._scale_factor = math.sqrt(len(wl_dict))
@@ -344,16 +357,15 @@ class ProxHyperSARAPos(Regulariser):
         psit_x = self._wavedec2_dict(x)
         psit_x_l2 = torch.sum(psit_x**2, dim=1, keepdim=True)
         if self._is_dist:
-            psit_x_l2 = dist.all_reduce(
-                psit_x_l2.to(self._dist_device), op=dist.ReduceOp.SUM
-            )
+            psit_x_l2 = psit_x_l2.to(self._dist_device)
+            dist.all_reduce(psit_x_l2, op=dist.ReduceOp.SUM)
             psit_x_l2 = psit_x_l2.to(self._device)
         psit_x_l2 = torch.sqrt(psit_x_l2)
         self._weights = self._wl_noise_floor / (self._wl_noise_floor + psit_x_l2)
 
     def get_l21_norm(self) -> float:
         """
-        Gets the latest l21 norm calculated in `_sfth_dual`.
+        Gets the latest l21 norm calculated in `__call__`.
 
         Returns:
             float: The latest l21 norm.
@@ -367,7 +379,10 @@ class ProxHyperSARAPos(Regulariser):
         Args:
             wl_noise_floor (float): The noise floor level to set.
         """
-        self._wl_noise_floor = wl_noise_floor.reshape(1, self._rank_num_ch, 1, 1).to(
+        assert (
+            wl_noise_floor.numel() == 1
+        ), "Noise floor level should be a scalar for Hyper-uSARA prox."
+        self._wl_noise_floor = wl_noise_floor.reshape(1, 1, 1).to(
             device=self._device, dtype=self._dtype
         )
 
@@ -378,6 +393,9 @@ class ProxHyperSARAPos(Regulariser):
         Args:
             sfth_val (float): The soft thresholding level for the wavelet coefficients.
         """
-        self._sfth_val = sfth_val.reshape(1, self._rank_num_ch, 1, 1).to(
+        assert (
+            sfth_val.numel() == 1
+        ), "Soft thresholding value should be a scalar for Hyper-uSARA prox."
+        self._sfth_val = sfth_val.reshape(1, 1, 1).to(
             device=self._device, dtype=self._dtype
         )
