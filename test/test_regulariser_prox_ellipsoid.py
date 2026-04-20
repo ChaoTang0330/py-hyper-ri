@@ -32,6 +32,7 @@ def create_prox_ellipsoid(
     reg = ProxEllipsoid(
         center=center,
         precond_weight=[torch.ones(1, dtype=dtype) for _ in range(channels)],
+        rank_num_ch=channels,
         itr_min=1,
         itr_max=5,
         rel_var_tol=1e-6,
