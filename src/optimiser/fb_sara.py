@@ -173,7 +173,7 @@ class FBSARA(ForwardBackward):
                 sfth_level_list = [sfth_level_list]
             print(
                 f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"heuristic soft threolding level: [{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
+                f"heuristic soft threolding level (gamma x lambda): [{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
                 flush=True,
             )
             if self._is_distributed:

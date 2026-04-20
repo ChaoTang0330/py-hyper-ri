@@ -7,3 +7,4 @@ from .fb_airi import FBAIRI
 from .pd_airi import PDAIRI
 from .fb_sara import FBSARA
 from .fb_hyperairi import FBHyperAIRI
+from .fb_hypersara import FBHyperSARA

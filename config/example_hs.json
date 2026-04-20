@@ -39,7 +39,7 @@
             "meas_device": "cuda",
             "meas_dtype": "double",
             "regulariser_device": "cuda",
-            "regulariser_dtype": "single",
+            "regulariser_dtype": "double",
             "dist_backend": "nccl",
             "dist_init_method": "env://"
         },
@@ -122,6 +122,21 @@
             "dnn_adaptive_peak_tol_max": 1e-1,
             "dnn_adaptive_peak_tol_min": 1e-5,
             "dnn_adaptive_peak_tol_step": 0.1
+        },
+        "hyper-usara": {
+            "denoiser_comment_1": "hyper-usara params",
+            "heu_reg_param_scale": 1.0,
+            "reweighting": true
+        },
+        "hyper-usara_default": {
+            "denoiser_comment_2": "hyper-usara default params",
+            "approx_meas_op": true,
+            "im_min_itr": 20,
+            "im_max_itr": 2000,
+            "im_max_outer_itr": 20,
+            "im_var_tol": 1e-5,
+            "im_var_outer_tol": 1e-4,
+            "reweighting_save": false
         }
     }
 ]

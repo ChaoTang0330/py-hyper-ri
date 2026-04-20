@@ -8,10 +8,10 @@ import torch
 import torch.distributed as dist
 
 from .interface.io import env_int
-from .regulariser import ProxSARAPos
+from .regulariser import ProxSARAPos, ProxHyperSARAPos
 from .regulariser import ProxEllipsoid
 from .regulariser import DenAIRI, DenHyperAIRI
-from .optimiser import FBSARA
+from .optimiser import FBSARA, FBHyperSARA
 from .optimiser import FBAIRI, PDAIRI, FBHyperAIRI
 
 from .interface.load_data import load_data_to_tensor
@@ -186,7 +186,35 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         )
 
     elif param_optimiser["algorithm"] == "hyper-usara":
-        return NotImplemented
+        # prepare proximal operator of Hyper-uSARA with positivity constraint
+        prox_op_sara = ProxHyperSARAPos(
+            param_optimiser["img_size"],
+            rank_num_ch=len(data["y"]),
+            rank_ch_start=data["rank_eff_ch_start"],
+            device=param_proxop["device"],
+            dtype=param_proxop["dtype"],
+            verbose=param_proxop["verbose"],
+        )
+
+        # prepare Hyper-uSARA optimiser
+        optimiser = FBHyperSARA(
+            meas=data["y"],
+            ch_freq=data["freqs"],
+            meas_op=meas_op,
+            regulariser=prox_op_sara,
+            rank_ch_start=data["rank_eff_ch_start"],
+            meas_op_approx=meas_op_approx,
+            im_min_itr=param_optimiser["im_min_itr"],
+            im_max_itr=param_optimiser["im_max_itr"],
+            im_var_tol=param_optimiser["im_var_tol"],
+            heu_reg_scale=param_optimiser["heu_reg_param_scale"],
+            im_max_itr_outer=param_optimiser["im_max_outer_itr"],
+            im_var_tol_outer=param_optimiser["im_var_outer_tol"],
+            save_pth=param_optimiser["result_path"],
+            file_prefix=param_optimiser["file_prefix"],
+            reweight_save=param_optimiser["reweighting_save"],
+            verbose=param_optimiser["verbose"],
+        )
 
     elif param_optimiser["algorithm"] == "airi":
         # prepare AIRI denoiser

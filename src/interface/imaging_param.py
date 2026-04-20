@@ -305,7 +305,7 @@ def set_imaging_params_ri(
             )
 
     # parameters shared by SARA algorithms
-    elif param_optimiser["algorithm"] in ["usara"]:
+    elif param_optimiser["algorithm"] in ["usara", "hyper-usara"]:
         # heuristic regularisation parameter scale
         if (
             param_general.get("heu_reg_param_scale", None)
@@ -338,7 +338,7 @@ def set_imaging_params_ri(
             param_optimiser["im_var_outer_tol"] = 1e-3
 
         # specific parameters for uSARA
-        if param_optimiser["algorithm"] in ["usara"]:
+        if param_optimiser["algorithm"] in ["usara", "hyper-usara"]:
             param_optimiser["approx_meas_op"] = param_general.get(
                 "approx_meas_op", False
             )
@@ -367,9 +367,13 @@ def set_imaging_params_ri(
         file_prefix = (
             "uSARA_heuRegScale_" + str(param_optimiser["heu_reg_param_scale"]) + "_"
         )
-    if param_optimiser["algorithm"] == "hyperairi":
+    elif param_optimiser["algorithm"] == "hyperairi":
         file_prefix = (
             "HyperAIRI_heuScale_" + str(param_optimiser["heu_noise_scale"]) + "_"
+        )
+    elif param_optimiser["algorithm"] == "hyper-usara":
+        file_prefix = (
+            "Hyper-uSARA_heuRegScale_" + str(param_optimiser["heu_reg_param_scale"]) + "_"
         )
     if param_general.get("run_id", None):
         file_prefix += "runID_" + str(param_general["run_id"]) + "_"
