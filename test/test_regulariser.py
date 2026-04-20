@@ -12,11 +12,31 @@ from .test_regulariser_den_hyperairi import create_den_hyperairi
 from .test_regulariser_prox_ellipsoid import create_prox_ellipsoid
 from .test_regulariser_prox_positivity import create_prox_positivity
 from .test_regulariser_prox_usara import create_prox_usara
+from .test_regulariser_prox_hyperusara import create_prox_hyperusara
 
 
-REGULARISERS = ["positivity", "sara", "denairi", "ellipsoid", "denhyperairi"]
-REGULARISERS_SINGLE_CHANNEL = ["positivity", "sara", "denairi", "ellipsoid"]
-REGULARISERS_TWO_CHANNEL = ["positivity", "sara", "denairi", "ellipsoid", "denhyperairi"]
+REGULARISERS = [
+    "positivity",
+    "proxusara",
+    "denairi",
+    "ellipsoid",
+    "denhyperairi",
+    "proxhyperusara",
+]
+REGULARISERS_SINGLE_CHANNEL = [
+    "positivity",
+    "proxusara",
+    "denairi",
+    "ellipsoid",
+]
+REGULARISERS_TWO_CHANNEL = [
+    "positivity",
+    "proxusara",
+    "denairi",
+    "ellipsoid",
+    "denhyperairi",
+    "proxhyperusara",
+]
 
 
 def _build_regulariser(
@@ -27,7 +47,7 @@ def _build_regulariser(
 ):
     if regulariser_type == "positivity":
         return create_prox_positivity(channels=channels, dtype=dtype, seed=seed)
-    if regulariser_type == "sara":
+    if regulariser_type == "proxusara":
         return create_prox_usara(channels=channels, dtype=dtype, seed=seed)
     if regulariser_type == "denairi":
         return create_den_airi(channels=channels, dtype=dtype, seed=seed)
@@ -35,6 +55,8 @@ def _build_regulariser(
         return create_prox_ellipsoid(channels=channels, dtype=dtype, seed=seed)
     if regulariser_type == "denhyperairi":
         return create_den_hyperairi(channels=channels, dtype=dtype, seed=seed)
+    if regulariser_type == "proxhyperusara":
+        return create_prox_hyperusara(channels=channels, dtype=dtype, seed=seed)
     raise ValueError(f"Unknown regulariser type: {regulariser_type}")
 
 
