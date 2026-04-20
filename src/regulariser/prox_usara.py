@@ -8,6 +8,7 @@ import math
 import torch
 import torch.distributed as dist
 import ptwt
+import pywt
 
 from .regulariser import Regulariser
 
@@ -74,6 +75,13 @@ class ProxSARAPos(Regulariser):
             verbose (bool, optional): If True, print progress messages. Defaults to True.
         """
         super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
+
+        assert wl_dict, "Wavelet dictionary cannot be empty."
+        for basis in wl_dict:
+            if basis != "dirac":
+                assert basis in pywt.wavelist(
+                    kind="discrete"
+                ), f"Unsupported wavelet basis: {basis}"
 
         self._img_size = img_size
         self._rank_num_ch = rank_num_ch
