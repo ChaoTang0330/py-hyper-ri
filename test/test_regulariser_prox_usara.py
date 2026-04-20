@@ -24,8 +24,12 @@ def create_prox_usara(
         dtype=dtype,
         verbose=False,
     )
-    reg.set_soft_thresholding_value(make_positive_threshold(channels, value=1.0e-3, dtype=dtype))
-    reg.set_noise_floor_level(make_positive_threshold(channels, value=1.0e-3, dtype=dtype))
+    reg.set_soft_thresholding_value(
+        make_positive_threshold(channels, value=1.0e-3, dtype=dtype)
+    )
+    reg.set_noise_floor_level(
+        make_positive_threshold(channels, value=1.0e-3, dtype=dtype)
+    )
 
     x = make_image_tensor(channels=channels, img_size=img_size, dtype=dtype, seed=seed)
     # Initialise reweighting with zero image as discussed.
@@ -50,3 +54,13 @@ def test_sara_update_populates_weights() -> None:
     assert len(reg._weights) > 0
     if reg._dirac:
         assert isinstance(reg._weights[-1], torch.Tensor)
+
+
+def test_usara_wavelet_dict_round_trip_reconstruction() -> None:
+    """Forward then adjoint wavelet-dictionary transform should reconstruct input."""
+    reg, x = create_prox_usara(channels=2, dtype=torch.float32, seed=13)
+
+    coeff = reg._wavedec2_dict(x)
+    x_recon = reg._waverec2_dict(coeff)
+
+    assert torch.allclose(x, x_recon, atol=1e-6)
