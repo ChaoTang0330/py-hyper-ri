@@ -98,6 +98,16 @@ class Optimiser(ABC):
                 ch_num_each_rank_tensor.cpu().numpy().tolist()
             )
 
+            # device for p2p communication
+            dist_backend = dist.get_backend()
+            if dist_backend == "nccl":
+                self._dist_device = torch.device("cuda")
+            elif dist_backend == "xccl":
+                self._dist_device = torch.device("xpu")
+            else:
+                # for gloo and mpi
+                self._dist_device = torch.device("cpu")
+
     @abstractmethod
     def initialisation(self) -> Any:
         """
