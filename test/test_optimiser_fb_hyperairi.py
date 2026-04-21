@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import torch
-
 from src.optimiser import FBHyperAIRI
 
 from .optimiser_helpers import make_test_meas
