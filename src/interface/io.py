@@ -1,5 +1,8 @@
-"""
-Utility functions for input/output operations.
+"""Provide interface IO helpers for configuration and MAT-file loading.
+
+This file implements environment/config parsing utilities used by the
+imaging entry points, plus compatibility loading for MATLAB files stored in
+either legacy formats or HDF5-based v7.3 format.
 """
 
 import os
@@ -15,14 +18,27 @@ from scipy.io.matlab import matfile_version
 
 
 def env_int(name: str, default: int) -> int:
-    """
-    Retrieve an integer value from the environment variable.
+    """Retrieve the value of an environment variable as an integer.
 
     Args:
-        name (str): The name of the environment variable.
-        default (int): The default value to return if the environment variable is not set.
+        name (str): Environment variable name.
+        default (int): Fallback value used when the variable is unset.
+
     Returns:
-        int: The integer value of the environment variable or the default value.
+        int: Parsed integer value from the environment variable, or ``default`` when
+        the variable does not exist.
+
+    Raises:
+        ValueError: If the environment variable exists but cannot be parsed as
+            an integer.
+
+    Examples:
+        >>> import os
+        >>> os.environ["RI_NUM_WORKERS"] = "4"
+        >>> env_int("RI_NUM_WORKERS", 1)
+        4
+        >>> env_int("RI_UNSET_KEY", 1)
+        1
     """
     v = os.environ.get(name)
     return int(v) if v is not None else default
@@ -33,20 +49,48 @@ def resolve_existing_file_path(
     library_root: str,
     relative_anchor: Optional[str] = None,
 ) -> str:
-    # 1) Normalize raw text from config/csv
+    """Resolve a file path against common project roots and validate existence.
+
+    The input path may be absolute, relative, or include environment variable
+    and user-home expansions. Relative paths are resolved in priority order
+    against the current working directory, an optional anchor, and the
+    provided library root.
+
+    Args:
+        path (str): Raw file path.
+        library_root (str): Package/library root used as a fallback search
+            location for relative paths.
+        relative_anchor (str, optional): Additional root used before
+            ``library_root`` for relative resolution. Default: ``None``.
+
+    Returns:
+        str: Absolute resolved path to an existing file.
+
+    Raises:
+        FileNotFoundError: If no candidate path resolves to an existing file.
+
+    Notes:
+        Relative paths are resolved in this order: current working directory,
+        ``relative_anchor`` when provided, then ``library_root``.
+
+    Examples:
+        >>> resolve_existing_file_path("config/default.json", ".")
+        '/abs/path/to/config/default.json'
+    """
+    # Normalise raw path text from config/CSV input.
     raw = os.path.expandvars(path.strip().strip('"').strip("'"))
     p = Path(raw).expanduser()
 
     attempts = []
 
-    # 2) Absolute path case
+    # Handle absolute paths directly.
     if p.is_absolute():
         rp = p.resolve(strict=False)
         attempts.append(rp)
         if rp.is_file():
             return str(rp)
     else:
-        # 3) Relative candidates in priority order
+        # Resolve relative paths against priority roots.
         candidate_roots = [Path.cwd()]
         if relative_anchor is not None:
             candidate_roots.append(Path(relative_anchor))
@@ -71,40 +115,57 @@ def resolve_existing_file_path(
 def print_dict(
     curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = True
 ) -> None:
-    """
-    Print items in a dictionary.
+    """Print key-value pairs from a dictionary.
 
     Args:
-        curr_dict (Dict[str, Any]): Dictionary to print.
-        indentation (int, optional): The number of spaces to indent each line. Defaults to 4.
-        flush (bool, optional): Whether to flush the output buffer. Defaults to True.
+        curr_dict (Dict[str, Any]): Dictionary whose items are printed.
+        indentation (int, optional): Number of leading spaces per printed
+            line. Default: 4.
+        flush (bool, optional): Whether to flush stdout after each print.
+            Default: True.
     """
     for k, v in curr_dict.items():
         print(" " * indentation + f"{k}: {v}", flush=flush)
 
 
-def verbose_print(args: str, verbose: bool = True):
-    """
-    Print messages if verbose is True.
+def verbose_print(args: str, verbose: bool = True) -> None:
+    """Print a message only when verbose mode is enabled.
 
     Args:
-        args (str): String to print.
-        verbose (bool, optional): Flag to indicate whether to print the messages. Defaults to True.
+        args (str): Message text to print.
+        verbose (bool, optional): If ``True``, print ``args`` to stdout.
+            Default: True.
 
+    Returns:
+        None: This function does not return a value.
     """
     if verbose:
         print(args, flush=True)
 
 
 def load_mat_to_np(file_name: str) -> Dict[str, Any]:
-    """
-    Check mat file version and load data. If the mat file has the latest version (v7.3),
-    it will be loaded using h5py. Otherwise, it will be loaded using scipy.io.loadmat.
+    """Load MATLAB data into a Python dictionary.
+
+    Files with MATLAB v7.3 format are read with :mod:`h5py`, while older
+    formats are read with :func:`scipy.io.loadmat`. Complex-valued v7.3 HDF5
+    datasets stored with ``real`` and ``imag`` fields are converted to complex
+    NumPy arrays.
 
     Args:
-        file_name (str): Path of the .mat file to load.
+        file_name (str): Path to the ``.mat`` file.
+
     Returns:
-        dict: A dictionary containing the data loaded from the .mat file.
+        Dict[str, Any]: Mapping from MATLAB variable names to loaded arrays or
+        values.
+
+    Raises:
+        FileNotFoundError: If ``file_name`` does not exist.
+        OSError: If the file cannot be opened or is not a valid MAT file.
+
+    Notes:
+        MATLAB v7.3 files are HDF5 containers and are read dataset-by-dataset.
+        For structured datasets with ``real`` and ``imag`` fields, this
+        function reconstructs complex arrays as ``real + 1j * imag``.
     """
     data = {}
     mat_version, _ = matfile_version(file_name)
@@ -123,90 +184,107 @@ def load_mat_to_np(file_name: str) -> Dict[str, Any]:
 
 
 def parsing_arguments() -> argparse.Namespace:
-    """
-    Parses input arguments from the command line.
+    """Parse command-line arguments for the imaging entry point.
 
     Returns:
-        argparse.Namespace: Parsed command line arguments.
+        argparse.Namespace: Parsed CLI arguments including configuration path,
+        dataset selection, imaging dimensions, algorithm choice, and
+        channel-selection options.
+
+    Raises:
+        SystemExit: If command-line parsing fails or ``--help`` is requested.
+
+    Notes:
+        This function parses values from ``sys.argv`` using
+        :class:`argparse.ArgumentParser`.
+
+    Examples:
+        Run with a custom config file::
+
+            python run_imager.py --config ./config/example.json
+
+        Override algorithm and image size from the command line::
+
+            python run_imager.py --algorithm hyperairi --im_dim_x 512 --im_dim_y 512
     """
-    parser = argparse.ArgumentParser(description="imaging main parameters")
+    parser = argparse.ArgumentParser(description="Imaging main parameters.")
     parser.add_argument(
         "-c",
         "--config",
         type=str,
         default="./config/default.json",
-        help="path of the configuration file",
+        help="Path to the configuration file.",
     )
     parser.add_argument(
-        "--src_name", type=str, default=None, help="Initial reg parameter"
+        "--src_name", type=str, default=None, help="Source name identifier."
     )
     parser.add_argument(
-        "--data_file", type=str, default=None, help="path of the datafile"
+        "--data_file", type=str, default=None, help="Path to the input data file."
     )
     parser.add_argument(
-        "--result_path", type=str, default=None, help="path of the result folder"
+        "--result_path", type=str, default=None, help="Path to the result directory."
     )
     parser.add_argument(
         "--algorithm",
         type=str,
         default=None,
         choices=["airi", "cairi", "usara", "hyperairi", "hyper-usara"],
-        help="imaging algorithm",
+        help="Imaging algorithm.",
     )
     parser.add_argument(
-        "--im_dim_x", type=int, default=None, help="result horizental image size"
+        "--im_dim_x", type=int, default=None, help="Reconstructed image width in pixels."
     )
     parser.add_argument(
-        "--im_dim_y", type=int, default=None, help="result vertical image size"
+        "--im_dim_y", type=int, default=None, help="Reconstructed image height in pixels."
     )
     parser.add_argument(
         "--dnn_shelf_path",
         type=str,
         default=None,
-        help="path of the denoiser shelf configuration file",
+        help="Path to the denoiser shelf configuration file.",
     )
     parser.add_argument(
         "--im_pixel_size",
         type=float,
         default=None,
-        help="pixel size of the estimated image in the unit of arcsec",
+        help="Estimated image pixel size in arcsec.",
     )
     parser.add_argument(
         "--superresolution",
         type=float,
         default=None,
-        help="imaging super-resolution factor",
+        help="Imaging super-resolution factor.",
     )
     parser.add_argument(
         "--ch_start",
         type=int,
         default=None,
-        help="starting physical channel index of the data",
+        help="Starting physical channel index in the input data.",
     )
     parser.add_argument(
         "--ch_last",
         type=int,
         default=None,
-        help="last physical channel index of the data",
+        help="Last physical channel index in the input data.",
     )
     parser.add_argument(
         "--ch_effective",
         type=int,
         default=None,
-        help="number of effective channels of the result image cube",
+        help="Number of effective channels in the reconstructed image cube.",
     )
     parser.add_argument(
         "--ch_partition",
         type=int,
         nargs="+",
         default=None,
-        help="list of channel indices for partitioning the data",
+        help="Channel-index list used for data partitioning.",
     )
     parser.add_argument(
         "--run_id",
         type=int,
         default=None,
-        help="identification number of the current task",
+        help="Identifier for the current run.",
     )
     return parser.parse_args()
 
@@ -214,15 +292,29 @@ def parsing_arguments() -> argparse.Namespace:
 def parsing_parameters(
     config_file: str, input_param: Optional[argparse.Namespace] = None
 ) -> Dict[str, Any]:
-    """
-    Mixes input parameters from the command line and config file.
+    """Merge configuration-file parameters with CLI overrides.
+
+    The returned dictionary starts from the ``main`` config section, applies
+    non-null CLI overrides for matching keys, then extends algorithm-specific
+    and shared parameter groups.
 
     Args:
-        config_file (str): Path of the configuration file.
-        input_param (argparse.Namespace, optional): Parsed command line arguments.
+        config_file (str): Path to the JSON configuration file.
+        input_param (argparse.Namespace, optional): Parsed CLI arguments used
+            as overrides when values are not ``None``. Default: ``None``.
 
     Returns:
-        Dict[str, Any]: Dictionary of parameters.
+        Dict[str, Any]: Flattened runtime parameter dictionary used by the
+        imaging pipeline.
+
+    Raises:
+        NotImplementedError: If the selected algorithm is not supported by the
+        parameter-routing logic.
+
+    Notes:
+        Command-line inputs have the highest priority. Algorithm-specific
+        parameters are expected not to overlap with keys from the ``main``
+        section or command-line inputs.
     """
     with open(config_file, "r", encoding="utf-8") as file:
         json_data = json.load(file)
@@ -233,15 +325,16 @@ def parsing_parameters(
             if k != "__comment":
                 json_dict[k] = v
 
-    # load main parameters
+    # Start from the main config section.
     param = json_dict["main"]
     if input_param is not None:
+        # Apply non-null CLI overrides for matching keys.
         dict_input_param = vars(input_param)
         for k, v in dict_input_param.items():
             if k in param and v is not None:
                 param[k] = v
 
-    # load general parameters
+    # Merge shared and algorithm-specific parameter sections.
     list_keys = ["flag", "weighting", "computing", "nufft"]
     if param["algorithm"] == "airi":
         list_keys.extend(["airi", "airi_default"])
@@ -259,7 +352,12 @@ def parsing_parameters(
         for k, v in json_dict[key].items():
             if "_comment_" not in k:
                 param[k] = v
-    if input_param is not None and input_param.dnn_shelf_path is not None:
-        param["dnn_shelf_path"] = input_param.dnn_shelf_path
+
+    # Override algorithm-specific parameters with CLI inputs when provided.
+    if input_param is not None:
+        dict_input_param = vars(input_param)
+        for k, v in dict_input_param.items():
+            if k in param and v is not None:
+                param[k] = v
 
     return param

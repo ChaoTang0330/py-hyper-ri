@@ -1,5 +1,9 @@
-"""
-User interface module.
+"""Expose functions for configuration, IO, and data preparation.
+
+This module groups interface utilities used by the imaging entry points,
+including argument parsing, runtime parameter assembly, data loading,
+imaging-weight generation, spectral-index calculations, and distributed
+channel-gather operations.
 """
 
 from .io import env_int, parsing_arguments, print_dict, verbose_print

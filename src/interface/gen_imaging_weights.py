@@ -1,3 +1,9 @@
+"""Generate imaging-weight arrays from UV sampling distributions.
+
+This file provides Torch and NumPy implementations of uniform and Briggs
+weighting schemes used for RI imaging.
+"""
+
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -5,36 +11,51 @@ import torch
 
 
 def gen_imaging_weights(
-    u,
-    v,
-    natural_weight,
-    im_size,
-    weight_type="briggs",
-    weight_gridsize=2.0,
-    weight_robustness=0.0,
-):
-    """
-    Parameters
-    ----------
-    u : torch.tensor
-        u coordinate of the data point in the Fourier domain in radians.
-    v : torch.tensor
-        v coordinate of the data points in the Fourier domain in radians.
-    natural_weight : torch.tensor
-        square root of inverse of the variance.
-    im_size:  tuple
-        image dimension
-    weight_type : str
-        Type of weight: {'uniform', 'robust', 'none'}. Default is 'robust'.
-    weight_gridsize : int
-        Grid size for weight calculation. Default is 1.
-    weight_robustness : float
-        The Briggs parameter for robust weighting. Default is 0.0.
+    u: torch.Tensor,
+    v: torch.Tensor,
+    natural_weight: torch.Tensor,
+    im_size: Tuple[int, int],
+    weight_type: str = "briggs",
+    weight_gridsize: float = 2.0,
+    weight_robustness: float = 0.0,
+) -> torch.Tensor:
+    """Generate imaging weights from UV sampling density using PyTorch.
 
-    Returns
-    -------
-    imaging_weight : torch.tensor
-        weights inferred from the density of the sampling (uniform/Briggs).
+    Args:
+        u (torch.Tensor): U-coordinates in Fourier radians.
+        v (torch.Tensor): V-coordinates in Fourier radians.
+        natural_weight (torch.Tensor): Natural weights (square root of inverse
+            variance), either scalar-like or per-visibility.
+        im_size (Tuple[int, int]): Image size used to construct the UV grid.
+        weight_type (str, optional): Weighting mode. Supported values are
+            ``"uniform"`` and ``"briggs"``. Default: "briggs".
+        weight_gridsize (float, optional): Grid oversampling factor for
+            density estimation. Default: 2.0.
+        weight_robustness (float, optional): Briggs robustness parameter.
+            Default: 0.0.
+
+    Returns:
+        torch.Tensor: Imaging weights with shape ``(1, 1, N)``.
+
+    Raises:
+        NotImplementedError: If ``weight_type`` is unsupported.
+
+    Notes:
+        Coordinates are mirrored to the upper half-plane before gridding to
+        exploit conjugate symmetry. ``natural_weight`` may be scalar-like or
+        per-visibility; a scalar-like input is broadcast to all samples.
+
+    Examples:
+        Generate Briggs weights for torch tensors:
+
+        >>> imaging_weight = gen_imaging_weights(
+        ...     torch.tensor([0.0, 0.1]),
+        ...     torch.tensor([0.0, -0.1]),
+        ...     torch.tensor([1.0, 1.0]),
+        ...     (512, 512),
+        ... )
+        >>> imaging_weight.shape
+        torch.Size([1, 1, 2])
     """
 
     u = u.clone()
@@ -51,7 +72,7 @@ def gen_imaging_weights(
     u[v < 0] = -u[v < 0]
     v[v < 0] = -v[v < 0]
 
-    # Initialize gridded weights matrix with zeros
+    # Initialise gridded weights vector for UV density accumulation.
     p = (
         torch.floor((v + torch.pi) * weight_grid_size[0] / 2 / torch.pi)
         .to(torch.int64)
@@ -64,8 +85,11 @@ def gen_imaging_weights(
         .view(-1)
         - 1
     )
+
+    # Handle edge cells wrapped to -1 by floor operation.
     p[p == -1] = weight_grid_size[0] - 1
     q[q == -1] = weight_grid_size[1] - 1
+
     gridded_weights = torch.zeros(
         torch.prod(weight_grid_size), dtype=torch.float64, device=u.device
     )
@@ -80,10 +104,10 @@ def gen_imaging_weights(
                 "Not implemented image weighting type: " + weight_type
             )
 
-    # Use scatter_add_ to update gridded_weights
+    # Accumulate gridded UV-density weights.
     gridded_weights.scatter_add_(0, uv_idx, values.to(torch.float64))
 
-    # Apply weighting based on weighting_type
+    # Convert gridded UV density to per-sample imaging weights.
     if weight_type != "none":
         gridded_vals = gridded_weights[uv_idx]  # Gather the values
 
@@ -106,77 +130,89 @@ def gen_imaging_weights_np(
     weight_type: Literal["uniform", "briggs", "robust"] = "uniform",
     weight_gridsize: int = 2,
     weight_robustness: float = 0.0,
-):
-    """
-    Generate uniform weights or Briggs (robust) weights for RI measurements based on
-    the uv sampling pattern.
+) -> np.ndarray:
+    """Generate imaging weights from UV sampling density using NumPy.
 
     Args:
-        u (np.ndarray): The u coordinates of the sampling pattern.
-        v (np.ndarray): The v coordinates of the sampling pattern.
-        img_size (Tuple[int, int]): The size of the image to be reconstructed.
+        u (np.ndarray): U-coordinates of the sampling pattern.
+        v (np.ndarray): V-coordinates of the sampling pattern.
+        natural_weight (np.ndarray, optional): Natural weights for robust
+            weighting. Required for ``"robust"``/``"briggs"`` modes.
+            Default: None.
+        img_size (Tuple[int, int], optional): Image size used to construct the
+            UV grid. Default: (512, 512).
         weight_type (Literal["uniform", "briggs", "robust"], optional):
-            The type of weights to be generated. Can be "uniform" or "briggs".
-            Defaults to "uniform".
-        natural_weight (np.ndarray, optional): The natural weights for the uv sampling pattern.
-            Defaults to None.
-        grid_size (int, optional): The size of the grid for the uv sampling pattern.
-            Defaults to 1.
-        weight_robustness (float, optional): The robustness factor for the Briggs weighting.
-            Defaults to 0.0.
+            Weighting mode. ``"robust"`` and ``"briggs"`` are treated
+            identically. Default: "uniform".
+        weight_gridsize (int, optional): Grid oversampling factor for density
+            estimation. Default: 2.
+        weight_robustness (float, optional): Briggs robustness parameter.
+            Default: 0.0.
 
     Returns:
-        np.ndarray: The generated weights for the uv sampling pattern.
+        np.ndarray: Imaging weights with shape ``(N, 1)``.
 
     Raises:
-        NotImplementedError: If the weight_type is not "uniform" or "briggs".
+        NotImplementedError: If ``weight_type`` is unsupported.
+
+    Notes:
+        Coordinates are mirrored to the upper half-plane before gridding to
+        exploit conjugate symmetry. ``natural_weight`` is required for
+        ``"briggs"`` and ``"robust"`` weighting.
+
+    Examples:
+        Generate uniform imaging weights for NumPy arrays:
+
+        >>> weights = gen_imaging_weights_np(
+        ...     np.array([0.0, 0.1]),
+        ...     np.array([0.0, -0.1]),
+        ...     img_size=(512, 512),
+        ... )
+        >>> weights.shape
+        (2, 1)
     """
-    # flatting u & v vector
+    # Flatten U/V vectors.
     u = u.reshape((-1, 1)).astype(np.double)
     v = v.reshape((-1, 1)).astype(np.double)
 
-    # consider only half of the plane
+    # Consider only one half-plane using conjugate symmetry.
     u[v < 0] = -u[v < 0]
     v[v < 0] = -v[v < 0]
 
-    # Initialize
+    # Initialise intermediate buffers.
     nmeas = u.size
     weight_grid_size = np.floor(
         np.array((img_size[0] * weight_gridsize, img_size[1] * weight_gridsize))
     )
-    gridded_weight = np.zeros(
-        weight_grid_size.astype(int), dtype=np.double
-    )  # Initialize gridded weights matrix with zeros
+    gridded_weight = np.zeros(weight_grid_size.astype(int), dtype=np.double)
     image_weight = np.ones((nmeas, 1))
 
-    # grid uv points
+    # Grid UV sample coordinates.
     q = np.floor((u + np.pi) * weight_grid_size[1] / 2.0 / np.pi).astype(int) - 1
-    p = (
-        np.floor((v + np.pi) * weight_grid_size[0] / 2.0 / np.pi).astype(int) - 1
-    )  # matching index in matlab
+    p = np.floor((v + np.pi) * weight_grid_size[0] / 2.0 / np.pi).astype(int) - 1
 
-    # Handle edge cases where q or p is -1
+    # Handle edge cells wrapped to -1 by floor operation.
     q[q == -1] = weight_grid_size[1].astype(int) - 1
     p[p == -1] = weight_grid_size[0].astype(int) - 1
 
     if weight_type == "uniform":
         for idx in range(nmeas):
             gridded_weight[p[idx], q[idx]] += 1.0
-        # Apply weighting
+        # Apply uniform weighting.
         image_weight = 1.0 / np.sqrt(gridded_weight[p, q])
     elif weight_type in ["robust", "briggs"]:
-        # inverse of the noise variance
+        # Use inverse-noise-variance weighting for Briggs mode.
         natural_weight = natural_weight.reshape((-1, 1)).astype(np.double)
         natural_weight2 = natural_weight**2
         if natural_weight2.size == 1:
             natural_weight2 = natural_weight2[0] * np.ones((nmeas, 1))
         for idx in range(nmeas):
             gridded_weight[p[idx], q[idx]] += natural_weight2[idx]
-        # Compute robust scale factor
+        # Compute robust scale factor.
         robust_scale = (np.sum(gridded_weight) / np.sum(gridded_weight**2)) * (
             5 * 10 ** (-weight_robustness)
         ) ** 2
-        # Apply weighting
+        # Apply Briggs weighting.
         image_weight = 1.0 / np.sqrt(1.0 + robust_scale * gridded_weight[p, q])
     else:
         raise NotImplementedError(

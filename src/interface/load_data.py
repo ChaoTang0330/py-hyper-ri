@@ -1,5 +1,8 @@
-"""
-This module contains the function to load data from files and convert them to torch tensors.
+"""Load RI measurement data and convert them to torch tensors.
+
+This file reads channel-wise measurement files, applies channel partitioning
+and optional weighting logic, and returns tensors ready for measurement
+operator and optimiser initialisation.
 """
 
 import os
@@ -37,60 +40,111 @@ def load_data_to_tensor(
     ch_effctive: Optional[int] = None,
     ch_partition: Optional[List[int]] = None,
     verbose: bool = True,
-):
-    """Read u, v and imweight from specified path.
-    In this path, there should be a file name `msSpecs.mat` containing the following fields:
-        - freqs: a 1D array contains the frequencies of each channel.
-        - uvw: a 2D array contains the uvw coordinates of the sampling points.
-    Then for each channel, there should be a file named `data_ch_{channel}.mat` containing the following fields:
-        - data_I: a 1D array of compext values contains the visibilities of the channel.
-        - flag[optional]: a 1D array of boolean values marks the flagged uvw points.
-        - weightsNat: the natural weighting of the channel.
-        - weightsImg: the imaging weighting of the channel.
+) -> dict:
+    """Load channel-wise RI measurements and convert them into torch tensors.
 
-    Parameters
-    ----------
-    uv_file_path : str
-        Path to the file containing sampling pattern,
-        natural weights and (optional) imaging weights.
-    super_resolution : float
-        Super resolution factor.
-    image_pixel_size : float, optional
-        Image pixel size in arcsec, by default None
-    data_weighting : bool, optional
-        Flag to apply imaging weights, by default True
-    load_weight : bool, optional
-        Flag to load imaging weights from the file, by default False.
-        If set to False and data_weighting is True, the imaging weights will be generated.
-    dtype : torch.dtype, optional
-        Data type to be used, by default torch.float64
-    device : torch.device, optional
-        Device to be used, by default torch.device('cpu')
-    data : dict, optional
-        Dictionary to store the data, by default None
-    uvw_flag : tuple, optional
-        Tuple of flags for each channel, by default None.
-        If None, the flags will be loaded from the data file.
-    invert_uvw_flag : bool, optional
-        Flag to invert the uvw flags, by default False and flagged points will be removed.
-        If True, the uvw flag will be inverted and flagged points will be keeped.
-    ch_start : int, optional
-        Starting channel number (1-based index), by default 1
-    ch_last : int, optional
-        Last channel number (1-based index, included), by default None.
-        If None, all channels will be loaded.
-    ch_effctive : int, optional
-        Number of effective channels, by default None. If None, all channels will be loaded.
-    verbose : bool, optional
-        Flag to print information, by default True
+    The input directory is expected to contain one ``msSpecs.mat`` file with
+    global metadata (including ``freqs`` and ``uvw``), plus per-channel files
+    matching ``*data_ch_<index>.mat``.
 
-    Returns
-    -------
-    data: dict
-        Dictionary containing u, v, w, (optional) y, natural_weight, (optional) imaging_weight and other information.
+    Args:
+        uv_file_path (str): Path to the input data directory.
+        super_resolution (float, optional): Super-resolution factor used when
+            pixel size is not explicitly provided. Default: 1.5.
+        image_pixel_size (float, optional): Image pixel size in arcsec.
+            Default: None.
+        data_weighting (bool, optional): Whether to apply imaging weights.
+            Default: True.
+        load_weight (bool, optional): Whether to load imaging weights from the
+            channel files. If False and ``data_weighting`` is True, imaging
+            weights are generated. Default: False.
+        img_size (Tuple[int, int], optional): Image size used by weighting
+            generation. Default: (512, 512).
+        weight_type (str, optional): Imaging-weight type. Default: "briggs".
+        weight_gridsize (float, optional): Weight-grid size factor.
+            Default: 2.0.
+        weight_robustness (float, optional): Briggs robustness parameter.
+            Default: 0.0.
+        precond_weighting (bool, optional): Whether to generate preconditioning
+            weights. Default: False.
+        precond_weight_gridsize (float, optional): Grid size for
+            preconditioning-weight generation. Default: 2.0.
+        precond_weight_type (str, optional): Preconditioning-weight type.
+            Default: "uniform".
+        dtype (torch.dtype, optional): Real dtype for stored tensors.
+            Default: ``torch.float64``.
+        device (torch.device, optional): Target tensor device.
+            Default: ``torch.device("cpu")``.
+        data (dict, optional): Existing data dictionary to populate. If None,
+            a new dictionary is created. Default: None.
+        uvw_flag (tuple, optional): Optional per-channel flag arrays. If None,
+            flags are read from channel files when available. Default: None.
+        invert_uvw_flag (bool, optional): Whether to invert the loaded/provided
+            UVW flags before filtering samples. Default: False.
+        ch_start (int, optional): First physical channel index (1-based).
+            Default: 1.
+        ch_last (int, optional): Last physical channel index (1-based,
+            inclusive). If None, all available channels are considered.
+            Default: None.
+        ch_effctive (int, optional): Number of effective channels after
+            grouping. If None, all selected channels are used. Default: None.
+        ch_partition (List[int], optional): Channel-group sizes used to map
+            physical channels into effective channels. Default: None.
+        verbose (bool, optional): Whether to print progress information.
+            Default: True.
+
+    Returns:
+        dict: Data dictionary used by downstream operators/optimisers. Key
+        entries include ``u``, ``v``, ``w``, ``natural_weight``,
+        ``imaging_weight``, ``precond_weight``, optional ``y``, ``freqs``,
+        ``image_pixel_size``, ``super_resolution``, ``max_proj_baseline``, and
+        ``rank_eff_ch_start``.
+
+    Raises:
+        ValueError: If the provided channel partition does not match the number
+            of selected physical channels.
+
+    Notes:
+        Tensor containers ``u``, ``v``, ``w``, ``natural_weight``,
+        ``imaging_weight``, ``precond_weight``, and optional ``y`` are stored
+        per effective channel, with each tensor shaped as ``(1, 1, N)``.
+
+        In distributed mode, each rank loads only its assigned physical/effective
+        channel slice. The returned ``rank_eff_ch_start`` gives the global
+        effective-channel offset for the current rank.
+
+        If ``data`` is provided, this function populates and updates it in
+        place. If channel files do not contain ``data_I``, visibility tensors
+        remain empty.
+
+        Expected file content:
+
+        - ``msSpecs.mat`` should provide ``freqs`` and ``uvw``.
+        - ``data_ch_*.mat`` may provide ``flag``, ``weightsNat``,
+          ``weightsImg``, and ``data_I``.
+
+    Examples:
+        Load all channels with default weighting options:
+
+        >>> data = load_data_to_tensor("./data/measurement_set")
+        >>> data["freqs"].shape[1] > 0
+        True
+
+        Load a channel range and aggregate into four effective channels:
+
+        >>> data = load_data_to_tensor(
+        ...     "./data/measurement_set",
+        ...     ch_start=1,
+        ...     ch_last=16,
+        ...     ch_effctive=4,
+        ...     ch_partition=[4, 4, 4, 4],
+        ...     load_weight=False,
+        ... )
+        >>> len(data["u"])
+        4
     """
 
-    # check if running in distributed mode
+    # Detect distributed execution context.
     is_distributed = dist.is_available() and dist.is_initialized()
     rank = 0
     world_size = 1
@@ -102,7 +156,7 @@ def load_data_to_tensor(
         f"INFO: loading sampling pattern from {uv_file_path}", verbose_general
     )
 
-    # initialisation
+    # Initialise output containers.
     if data is None:
         data = {}
 
@@ -124,7 +178,7 @@ def load_data_to_tensor(
     imaging_weight_physical = []
     y_physical = []
 
-    # load msSpecs.mat
+    # Load global metadata from msSpecs.mat.
     ms_specs = load_mat_to_np(os.path.join(uv_file_path, "msSpecs.mat"))
     ms_specs["uvw"] = ms_specs["uvw"].squeeze()
     if ms_specs["uvw"].shape[0] == 3:
@@ -132,7 +186,7 @@ def load_data_to_tensor(
     freqs_physical = ms_specs["freqs"].flatten()
     num_freqs = freqs_physical.size
 
-    # range of channel index
+    # Resolve the physical/effective channel ranges.
     ch_start = max(0, ch_start - 1)
     if ch_last is None:
         ch_last = num_freqs
@@ -166,7 +220,7 @@ def load_data_to_tensor(
             ]
         )
 
-    # update channel index if running in distributed mode
+    # Derive per-rank channel ranges in distributed mode.
     rank_ch_start = 0
     rank_ch_last = sum(ch_partition)
     rank_eff_ch_start = 0
@@ -196,13 +250,13 @@ def load_data_to_tensor(
     if is_distributed:
         dist.barrier()
 
-    # load data of each physical channel
+    # Load each physical channel assigned to this rank.
     for ch, freq in enumerate(freqs_physical.tolist()[rank_ch_start:rank_ch_last]):
         u = ms_specs["uvw"][:, 0].copy().flatten()
         v = ms_specs["uvw"][:, 1].copy().flatten()
         w = ms_specs["uvw"][:, 2].copy().flatten()
 
-        # load data_ch_{ch}.mat
+        # Load channel-specific file data_ch_<index>.mat.
         data_ch_file = glob.glob(
             os.path.join(uv_file_path, f"*data_ch_{ch+rank_ch_start+1}.mat")
         )[0]
@@ -229,21 +283,21 @@ def load_data_to_tensor(
         if invert_uvw_flag:
             flag = np.logical_not(flag)
 
-        # convert flagged uvw in units of the wavelength
+        # Convert valid UVW samples into wavelength units.
         wavelength = speed_of_light / freq
         u = u[np.logical_not(flag)] / wavelength
         v = v[np.logical_not(flag)] / wavelength
         w = w[np.logical_not(flag)] / wavelength
 
-        # max projection baseline in the unit of wavelength
+        # Track maximum projected baseline in wavelength units.
         max_proj_baseline = max(max_proj_baseline, np.max(np.sqrt(u**2 + v**2)))
 
-        # append to data
+        # Accumulate physical-channel arrays.
         u_physical.append(u)
         v_physical.append(v)
         w_physical.append(w)
 
-        # load data of each channel if available
+        # Load per-channel visibilities and weights when available.
         if data_ch and "data_I" in data_ch:
             y_physical.append(data_ch["data_I"].flatten())
 
@@ -268,7 +322,7 @@ def load_data_to_tensor(
                     verbose_general and ch == 0,
                 )
 
-    # communicate max_proj_baseline if in distributed mode
+    # Reduce max projected baseline across ranks if distributed.
     if is_distributed:
         all_reduce_device = device
         dist_backend = dist.get_backend()
@@ -286,7 +340,7 @@ def load_data_to_tensor(
 
     data["max_proj_baseline"] = max_proj_baseline
 
-    # calculate pixel size
+    # Resolve pixel size from user input or super-resolution.
     if (
         "super_resolution" in data
         and ms_specs["super_resolution"].item() != super_resolution
@@ -333,7 +387,7 @@ def load_data_to_tensor(
     halfSpatialBandwidth = (180.0 / np.pi) * 3600.0 / (image_pixel_size) / 2.0
 
     for ch in range(rank_eff_ch_last - rank_eff_ch_start):
-        # initialize empty tensors
+        # Initialise empty tensors for one effective channel.
         data["u"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["v"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["w"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
@@ -343,7 +397,7 @@ def load_data_to_tensor(
         data["y"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
 
         for ch_physical in range(sum(ch_partition[:ch]), sum(ch_partition[: ch + 1])):
-            # convert u,v,w to radians and save in torch tensor
+            # Convert UVW coordinates and append them as torch tensors.
             data["u"][ch] = torch.cat(
                 (
                     data["u"][ch],
@@ -376,7 +430,7 @@ def load_data_to_tensor(
                 dim=-1,
             )
 
-            # convert natural_weight to torch tensor
+            # Append natural weights.
             data["natural_weight"][ch] = torch.cat(
                 (
                     data["natural_weight"][ch],
@@ -387,7 +441,7 @@ def load_data_to_tensor(
                 dim=-1,
             )
 
-            # concatenate image weights
+            # Append imaging weights when loaded from files.
             if load_weight:
                 data["imaging_weight"][ch] = torch.cat(
                     (
@@ -401,7 +455,7 @@ def load_data_to_tensor(
                     dim=-1,
                 )
 
-            # convert visibilities to torch tensor
+            # Append visibility tensors.
             if y_physical:
                 data["y"][ch] = torch.cat(
                     (
@@ -419,7 +473,7 @@ def load_data_to_tensor(
                     dim=-1,
                 )
 
-        # calculate image weight if needed
+        # Compute imaging weights when requested.
         if data_weighting:
             if not load_weight:
                 verbose_print(
@@ -452,7 +506,7 @@ def load_data_to_tensor(
             )
             data["imaging_weight"][ch] = torch.ones(1, 1, 1, dtype=dtype, device=device)
 
-        # calculate preconditioning weights if needed
+        # Compute preconditioning weights when requested.
         if precond_weighting:
             verbose_print(
                 "INFO: computing preconditioning weights...",
@@ -476,18 +530,18 @@ def load_data_to_tensor(
             )
             data["precond_weight"][ch] = torch.ones(1, 1, 1, dtype=dtype, device=device)
 
-        # apply natural weights and imaging weights to visibilities
+        # Apply natural and imaging weights to visibilities.
         if y_physical:
             with torch.no_grad():
                 data["y"][ch] *= data["natural_weight"][ch] * data["imaging_weight"][ch]
 
-            # check dimensions
+            # Validate weighted-visibility dimensions.
             assert data["y"][ch].shape == data["u"][ch].shape, (
                 f'dimensions do not match: y -> {data["y"][ch].shape}, '
                 f'u -> {data["u"][ch].shape}'
             )
 
-        # check dimensions
+        # Validate UV and weight dimensions.
         assert (
             data["u"][ch].shape == data["natural_weight"][ch].shape
             or data["natural_weight"][ch].numel() == 1
@@ -510,7 +564,7 @@ def load_data_to_tensor(
             verbose,
         )
 
-    # convert list to tuple to avoid modification
+    # Freeze list containers as tuples.
     data["u"] = tuple(data["u"])
     data["v"] = tuple(data["v"])
     data["w"] = tuple(data["w"])

@@ -1,45 +1,80 @@
-"""
-Generate parameter dictionaries for measuemt operator, prox operator and optimiser
-from input parameter dictionary.
+"""Build runtime parameter dictionaries for RI imaging components.
+
+This file converts a flattened configuration dictionary into the three
+parameter dictionaries consumed by the imaging pipeline: measurement operator,
+regulariser/prox operator, and optimiser.
 """
 
 from typing import Any, Dict, Tuple
 import os
 import torch
 import torch.distributed as dist
+from astropy.io import fits
 
 
 def set_imaging_params_ri(
     param_general: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    """
-    Set parameters of measuemt operator, prox operator and optimiser for
-    small scale RI imaging task.
+    """Construct validated imaging parameters for RI reconstruction.
+
+    This function maps user/config inputs into algorithm-ready dictionaries,
+    applies defaults and value guards, selects device/dtype settings, and
+    prepares output paths and filename prefixes.
 
     Args:
-        param_general (dict): A dictionary containing general parameters.
+        param_general (Dict[str, Any]): Flattened input parameter dictionary
+            produced by interface parsing utilities.
 
     Returns:
-        tuple: A tuple containing three dictionaries:
-            - param_measop (dict): A dictionary containing parameters for the measurement operator.
-            - param_proxop (dict): A dictionary containing parameters for the prox operator.
-            - param_optimiser (dict): A dictionary containing parameters for the optimiser.
+        Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]: Sorted
+        ``(param_measop, param_regulariser, param_optimiser)`` dictionaries used to
+        instantiate measurement operators, regularisers, and optimisers.
+
+    Raises:
+        KeyError: If required keys such as ``algorithm`` or ``data_file`` are
+            missing from ``param_general``.
+
+    Notes:
+        The output dictionaries expose a stable grouped contract for runtime
+        initialisation:
+
+        - ``param_measop``: Measurement-model controls including pixel/grid
+            settings, weighting, NUFFT options, device, and dtype.
+        - ``param_regulariser``: Regulariser runtime options including device,
+            dtype, verbosity, and AIRI/HyperAIRI denoiser controls.
+        - ``param_optimiser``: Iteration controls, convergence tolerances,
+            channel partitioning, distributed setup, output paths, and
+            algorithm-specific optimisation settings.
+
+        Important defaults and guards include:
+
+        - Invalid image/channel counts are clamped to valid ranges.
+        - Unsupported backend/mode values fall back to safe defaults.
+        - Device selection falls back to available accelerator, then CPU.
+
+    Examples:
+        >>> pg = {"algorithm": "airi", "data_file": "demo.mat"}
+        >>> pm, pr, po = set_imaging_params_ri(pg)
+        >>> po["algorithm"]
+        'airi'
+        >>> isinstance(po["img_size"], tuple)
+        True
     """
-    # initialisation
+    # Initialise output dictionaries.
     param_measop = {}
-    param_proxop = {}
+    param_regulariser = {}
     param_optimiser = {}
 
-    # parameters shared by all algorithms
+    # Set parameters shared by all algorithms.
     param_optimiser["algorithm"] = param_general["algorithm"]
     param_optimiser["data_file"] = param_general["data_file"]
-    # set default values
+    # Apply common default values.
     param_measop["invert_uvw_flag"] = param_general.get("invert_uvw_flag", False)
     param_optimiser["flag_imaging"] = param_general.get("flag_imaging", True)
-    param_proxop["verbose"] = param_general.get("verbose", True)
+    param_regulariser["verbose"] = param_general.get("verbose", True)
     param_optimiser["verbose"] = param_general.get("verbose", True)
 
-    # image size
+    # Set image size.
     if (
         param_general.get("im_dim_x", None)
         and param_general["im_dim_y"] >= 1
@@ -53,7 +88,7 @@ def set_imaging_params_ri(
     else:
         param_optimiser["img_size"] = (512, 512)
 
-    # channels
+    # Set channel configuration.
     param_optimiser["ch_start"] = int(param_general.get("ch_start", 1))
     if param_optimiser["ch_start"] < 1:
         param_optimiser["ch_start"] = 1
@@ -70,12 +105,12 @@ def set_imaging_params_ri(
     ch_partition_valid = all(int(x) > 0 for x in param_optimiser["ch_partition"])
     if ch_partition_valid:
         if len(param_optimiser["ch_partition"]) > 0:
-            # overwrite ch_effective
+            # Overwrite effective channel count from explicit partition.
             param_optimiser["ch_effective"] = len(param_optimiser["ch_partition"])
     else:
         param_optimiser["ch_partition"] = []
 
-    # image pixel size
+    # Set image pixel size.
     if (
         param_general.get("im_pixel_size", None)
         and param_general["im_pixel_size"] > 0.0
@@ -83,7 +118,7 @@ def set_imaging_params_ri(
         param_measop["im_pixel_size"] = param_general["im_pixel_size"]
     else:
         param_measop["im_pixel_size"] = None
-    # super-resolution factor
+    # Set super-resolution factor.
     if (
         param_general.get("superresolution", None)
         and param_general["superresolution"] >= 1.0
@@ -92,7 +127,7 @@ def set_imaging_params_ri(
     else:
         param_measop["superresolution"] = 1.0
 
-    # weighting
+    # Set weighting options.
     param_measop["flag_data_weighting"] = param_general.get("flag_data_weighting", True)
     param_measop["weight_load"] = param_general.get("weight_load", True)
     if param_general.get("weight_type", None) and param_general["weight_type"] in [
@@ -114,8 +149,8 @@ def set_imaging_params_ri(
     else:
         param_measop["weight_gridsize"] = 2
 
-    # nufft settings
-    # package
+    # Set NUFFT options.
+    # Select backend package.
     if param_general.get("nufft_package", None) and param_general["nufft_package"] in [
         "finufft",
         "pynufft",
@@ -125,7 +160,7 @@ def set_imaging_params_ri(
     else:
         param_measop["nufft_package"] = "finufft"
 
-    # oversampling factor
+    # Set oversampling-derived grid size.
     if (
         param_general.get("nufft_oversampling_factor", None)
         and param_general["nufft_oversampling_factor"][0] >= 1.0
@@ -146,7 +181,7 @@ def set_imaging_params_ri(
             int(2.0 * param_optimiser["img_size"][0]),
             int(2.0 * param_optimiser["img_size"][1]),
         )
-    # KB kernel dimension
+    # Set Kaiser-Bessel kernel dimension.
     if (
         param_general.get("nufft_kb_kernel_dim", None)
         and param_general["nufft_kb_kernel_dim"] >= 1.0
@@ -154,7 +189,7 @@ def set_imaging_params_ri(
         param_measop["nufft_kb_kernel_dim"] = int(param_general["nufft_kb_kernel_dim"])
     else:
         param_measop["nufft_kb_kernel_dim"] = 7
-    # nufft mode
+    # Set NUFFT mode.
     if param_general.get("nufft_mode", None) and param_general["nufft_mode"] in [
         "table",
         "matrix",
@@ -163,8 +198,8 @@ def set_imaging_params_ri(
     else:
         param_measop["nufft_mode"] = "table"
 
-    # computing resources
-    # devices
+    # Set computing resources.
+    # Discover available devices.
     list_devices = []
     if torch.cuda.is_available():
         list_devices.append("cuda")
@@ -180,10 +215,10 @@ def set_imaging_params_ri(
     else:
         param_measop["device"] = torch.device("cpu")
     if regulariser_device_type in list_devices:
-        param_proxop["device"] = torch.device(regulariser_device_type)
+        param_regulariser["device"] = torch.device(regulariser_device_type)
     else:
-        param_proxop["device"] = torch.device(list_devices[0])
-    # distributed settings
+        param_regulariser["device"] = torch.device(list_devices[0])
+    # Configure distributed settings.
     param_optimiser["dist_backend"] = param_general.get("dist_backend", "gloo")
     if not dist.is_backend_available(param_optimiser["dist_backend"]):
         param_optimiser["dist_backend"] = "gloo"
@@ -197,23 +232,23 @@ def set_imaging_params_ri(
     ]:
         param_optimiser["dist_init_method"] = "env://"
 
-    # max number of iterations
+    # Set maximum number of iterations.
     if param_general.get("im_max_itr", None) and param_general["im_max_itr"] > 0:
         param_optimiser["im_max_itr"] = int(param_general["im_max_itr"])
     else:
         param_optimiser["im_max_itr"] = 2000
-    # min number of iterations
+    # Set minimum number of iterations.
     if param_general.get("im_min_itr", None) and param_general["im_min_itr"] > 0:
         param_optimiser["im_min_itr"] = int(param_general["im_min_itr"])
     else:
         param_optimiser["im_min_itr"] = 200
-    # image variation tolerance
+    # Set image-variation tolerance.
     if param_general.get("im_var_tol", None) and param_general["im_var_tol"] > 0:
         param_optimiser["im_var_tol"] = float(param_general["im_var_tol"])
     else:
         param_optimiser["im_var_tol"] = 1e-5
 
-    # data type
+    # Set runtime dtypes.
     if param_general.get("meas_dtype", None) and param_general.get("meas_dtype") in [
         "float",
         "float32",
@@ -222,26 +257,25 @@ def set_imaging_params_ri(
         param_measop["dtype"] = torch.float
     else:
         param_measop["dtype"] = torch.double
-    if param_general.get("regulariser_dtype", None) and param_general.get("regulariser_dtype") in [
+    if param_general.get("regulariser_dtype", None) and param_general.get(
+        "regulariser_dtype"
+    ) in [
         "double",
         "float64",
     ]:
-        param_proxop["dtype"] = torch.double
+        param_regulariser["dtype"] = torch.double
     else:
-        param_proxop["dtype"] = torch.float
+        param_regulariser["dtype"] = torch.float
 
-    # interval for saveing intermediate results
+    # Interval for saving intermediate results.
     if param_general.get("itr_save", None) and param_general["itr_save"] >= 1:
         param_optimiser["itr_save"] = int(param_general["itr_save"])
     else:
         param_optimiser["itr_save"] = param_optimiser["im_max_itr"] + 1
 
-    # using approximate measurement operator
-    param_optimiser["approx_meas_op"] = False
-
-    # parameters shared by AIRI algorithms
+    # Set parameters shared by AIRI algorithms.
     if param_optimiser["algorithm"] in ["airi", "cairi", "hyperairi"]:
-        # heuristic noise scale
+        # Set heuristic noise scale.
         if (
             param_general.get("heu_noise_scale", None)
             and param_general["heu_noise_scale"] > 0
@@ -250,14 +284,14 @@ def set_imaging_params_ri(
         else:
             param_optimiser["heu_noise_scale"] = 1.0
 
-        # AIRI shelf path
+        # Set AIRI shelf path.
         if param_general.get("dnn_shelf_path", None) and isinstance(
             param_general["dnn_shelf_path"], str
         ):
-            param_proxop["dnn_shelf_path"] = param_general["dnn_shelf_path"]
+            param_regulariser["dnn_shelf_path"] = param_general["dnn_shelf_path"]
 
-        # Adaptive network selection scheme
-        # estimated image peak value
+        # Configure adaptive network-selection controls.
+        # Set estimated image-peak value.
         if param_general.get("im_peak_est", None) and param_general["im_peak_est"] > 0:
             param_optimiser["im_peak_est"] = float(param_general["im_peak_est"])
         else:
@@ -293,20 +327,73 @@ def set_imaging_params_ri(
         else:
             param_optimiser["dnn_adaptive_peak_tol_step"] = 0.1
 
-        # random input image flip & 90-degree rotation
-        param_proxop["dnn_apply_transform"] = param_general.get(
+        # Enable random input image flips and 90-degree rotations.
+        param_regulariser["dnn_apply_transform"] = param_general.get(
             "dnn_apply_transform", True
         )
 
-        # specific parameters for AIRI
-        if param_optimiser["algorithm"] in ["airi", "hyperairi"]:
-            param_optimiser["approx_meas_op"] = param_general.get(
-                "approx_meas_op", False
+        # HyperAIRI specific parameters
+        if param_optimiser["algorithm"] == "hyperairi":
+            # Adaptive spectral index update controls.
+            param_optimiser["spec_update"] = param_general.get("spec_update", True)
+            if (
+                param_general.get("spec_max_update_count", None)
+                and param_general["spec_max_update_count"] >= 1
+            ):
+                param_optimiser["spec_max_update_count"] = int(
+                    param_general["spec_max_update_count"]
+                )
+            else:
+                param_optimiser["spec_max_update_count"] = 50
+            param_optimiser["spec_idx_init"] = param_general.get(
+                "spec_idx_init", "zero"
             )
+            if os.path.isfile(param_optimiser["spec_idx_init"]):
+                param_optimiser["spec_idx_init"] = torch.from_numpy(
+                    fits.getdata(param_optimiser["spec_idx_init"])
+                )
+            elif param_optimiser["spec_idx_init"] not in ["dirty", "zero"]:
+                param_optimiser["spec_idx_init"] = "zero"
+            if (
+                param_general.get("spec_max_update_interval", None)
+                and param_general["spec_max_update_interval"] >= 1
+            ):
+                param_optimiser["spec_max_update_interval"] = int(
+                    param_general["spec_max_update_interval"]
+                )
+            else:
+                param_optimiser["spec_max_update_interval"] = 60
+            if (
+                param_general.get("spec_update_tol_max", None)
+                and param_general["spec_update_tol_max"] > 0
+            ):
+                param_optimiser["spec_update_tol_max"] = float(
+                    param_general["spec_update_tol_max"]
+                )
+            else:
+                param_optimiser["spec_update_tol_max"] = 1.6e-3
+            if (
+                param_general.get("spec_update_tol_min", None)
+                and param_general["spec_update_tol_min"] > 0
+            ):
+                param_optimiser["spec_update_tol_min"] = float(
+                    param_general["spec_update_tol_min"]
+                )
+            else:
+                param_optimiser["spec_update_tol_min"] = 1e-5
+            if (
+                param_general.get("spec_update_tol_step", None)
+                and param_general["spec_update_tol_step"] > 0
+            ):
+                param_optimiser["spec_update_tol_step"] = float(
+                    param_general["spec_update_tol_step"]
+                )
+            else:
+                param_optimiser["spec_update_tol_step"] = 0.5
 
-    # parameters shared by SARA algorithms
+    # Set parameters shared by SARA algorithms.
     elif param_optimiser["algorithm"] in ["usara", "hyper-usara"]:
-        # heuristic regularisation parameter scale
+        # Set heuristic regularisation-parameter scale.
         if (
             param_general.get("heu_reg_param_scale", None)
             and param_general["heu_reg_param_scale"] > 0
@@ -337,24 +424,25 @@ def set_imaging_params_ri(
         else:
             param_optimiser["im_var_outer_tol"] = 1e-3
 
-        # specific parameters for uSARA
-        if param_optimiser["algorithm"] in ["usara", "hyper-usara"]:
-            param_optimiser["approx_meas_op"] = param_general.get(
-                "approx_meas_op", False
-            )
+    # Set parameters for forward-backward algorithms.
+    param_optimiser["approx_meas_op"] = False
+    if param_optimiser["algorithm"] in ["airi", "hyperairi", "usara", "hyper-usara"]:
+        param_optimiser["approx_meas_op"] = param_general.get("approx_meas_op", False)
 
-    # parameters shared by constrained algorithms
+    # Set parameters shared by constrained algorithms.
     param_optimiser["precond_flag"] = False
     if param_optimiser["algorithm"] in ["cairi"]:
         param_optimiser["precond_flag"] = param_general.get("precond_flag", True)
 
-    # set path for saving results
-    if not param_general.get("src_name", None):
-        param_general["src_name"] = os.path.basename(param_general["data_file"])
-    if not param_general.get("result_path", None):
-        param_general["result_path"] = os.path.join(".", "results")
+    # Set path for saving results.
+    param_optimiser["src_name"] = param_general.get("src_name", None)
+    if not param_optimiser["src_name"]:
+        param_optimiser["src_name"] = os.path.basename(param_general["data_file"])
+    param_optimiser["result_path"] = param_general.get("result_path", None)
+    if not param_optimiser["result_path"]:
+        param_optimiser["result_path"] = os.path.join(".", "results")
     param_optimiser["result_path"] = os.path.join(
-        param_general["result_path"], param_general["src_name"]
+        param_optimiser["result_path"], param_optimiser["src_name"]
     )
     os.makedirs(param_optimiser["result_path"], exist_ok=True)
 
@@ -373,14 +461,17 @@ def set_imaging_params_ri(
         )
     elif param_optimiser["algorithm"] == "hyper-usara":
         file_prefix = (
-            "Hyper-uSARA_heuRegScale_" + str(param_optimiser["heu_reg_param_scale"]) + "_"
+            "Hyper-uSARA_heuRegScale_"
+            + str(param_optimiser["heu_reg_param_scale"])
+            + "_"
         )
-    if param_general.get("run_id", None):
-        file_prefix += "runID_" + str(param_general["run_id"]) + "_"
+    param_optimiser["run_id"] = param_general.get("run_id", None)
+    if param_optimiser["run_id"] is not None:
+        file_prefix += "runID_" + str(param_optimiser["run_id"]) + "_"
     param_optimiser["file_prefix"] = file_prefix
 
     return (
         dict(sorted(param_measop.items())),
-        dict(sorted(param_proxop.items())),
+        dict(sorted(param_regulariser.items())),
         dict(sorted(param_optimiser.items())),
     )
