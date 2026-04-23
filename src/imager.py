@@ -15,8 +15,8 @@ from .optimiser import FBSARA, FBHyperSARA
 from .optimiser import FBAIRI, PDAIRI, FBHyperAIRI
 
 from .interface.load_data import load_data_to_tensor
-from .ri_measurement_operator import MeasOpFinufft, MeasOpTkbn, MeasOpPSF
-from .ri_measurement_operator import MeasOpHyperspectral
+from .measurement_operator import MeasOpFinufft, MeasOpTkbn, MeasOpPSF
+from .measurement_operator import MeasOpHyperspectral
 
 
 def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> None:
@@ -325,18 +325,18 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             peak_tol_min=param_optimiser["dnn_adaptive_peak_tol_min"],
             peak_tol_max=param_optimiser["dnn_adaptive_peak_tol_max"],
             peak_tol_step=param_optimiser["dnn_adaptive_peak_tol_step"],
+            spec_update=param_optimiser["spec_update"],
+            spec_idx_init=param_optimiser["spec_idx_init"],
+            spec_max_update_count=param_optimiser["spec_max_update_count"],
+            spec_max_update_interval=param_optimiser["spec_max_update_interval"],
+            spec_update_tol_max=param_optimiser["spec_update_tol_max"],
+            spec_update_tol_min=param_optimiser["spec_update_tol_min"],
+            spec_update_tol_step=param_optimiser["spec_update_tol_step"],
             save_pth=param_optimiser["result_path"],
             file_prefix=param_optimiser["file_prefix"],
             iter_save=param_optimiser["itr_save"],
             verbose=param_optimiser["verbose"],
         )
-        # left to defult values:
-        # spec_update: bool = True,
-        # spec_max_update_count: int = 20,
-        # spec_max_update_interval: int = 200,
-        # spec_update_tol_max: float = 1e-2,
-        # spec_update_tol_min: float = 1e-5,
-        # spec_update_tol_step: float = 0.5,
 
     else:
         raise NotImplementedError(
