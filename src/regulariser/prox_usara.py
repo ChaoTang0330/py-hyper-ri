@@ -1,5 +1,7 @@
-"""
-Proximity operator for SARA with positivity constraint.
+"""Implement the uSARA positivity-constrained proximal operator.
+
+This file provides a dual forward-backward proximal step combining weighted
+wavelet :math:`\ell_1` sparsity with positivity projection.
 """
 
 from typing import Tuple, List, Union, Optional
@@ -19,13 +21,69 @@ WaveletDictCoeff = List[Union[WaveletCoeff, torch.Tensor]]
 
 
 class ProxSARAPos(Regulariser):
-    """
-    Proximity operator for SARA with positivity constrained.
+    r"""Apply the uSARA proximal operator with positivity constraint.
 
-    It provides methods for wavelet decomposition and reconstruction with multiple bases,
-    proximity operator for the adjoint of l1 norm, soft thresholding, and updating weights
-    for l1 norm. We use pytorch wavelet toolbox (ptwt) for wavelet decomposition and
-    reconstruction.
+    This class implements the proximal operator of the positivity-constrained
+    weighted wavelet prior used by uSARA. For an input image cube
+    :math:`\mathbf{x}`, it computes :math:`\operatorname{prox}_{g}(\mathbf{x})`,
+    where
+
+    .. math::
+        g(\mathbf{z})
+        =
+        \iota_{\mathbb{R}_{+}}(\mathbf{z})
+        +
+        \left\|
+        \mathbf{\Psi}^{\dagger}\mathbf{z}
+        \right\|_{1,\mathbf{w}},
+
+    with :math:`\iota_{\mathbb{R}_{+}}` the indicator function of the
+    non-negative orthant, :math:`\mathbf{\Psi}^{\dagger}` the concatenated
+    wavelet transform operator, and :math:`\mathbf{w}` the weighting
+    coefficients. In this implementation, the weighted :math:`\ell_{1}` term
+    is handled by a dual forward-backward iteration, while the primal update
+    enforces positivity.
+
+    The wavelet dictionary may include several wavelet bases and an optional
+    Dirac basis. The weighted :math:`\ell_{1}` norm is evaluated channel-wise,
+    with one set of reweighting coefficients per channel and per wavelet
+    coefficient block.
+
+    Shape:
+        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+          current rank.
+        - Output: ``(1, C, H, W)`` with the same shape as input.
+
+    Attributes:
+        _wl_dict (list[str]): Active non-Dirac wavelet bases.
+        _dirac (bool): Whether the Dirac basis is included.
+        _dual (WaveletDictCoeff): Current dual variables.
+        _weights (list): Current wavelet reweighting coefficients.
+
+    Example:
+        >>> prox = ProxSARAPos(
+        ...     img_size=(32, 32),
+        ...     rank_num_ch=2,
+        ...     sfth_val=torch.tensor([1e-3, 1e-3]),
+        ...     wl_noise_floor=torch.tensor([1e-4, 1e-4]),
+        ... )
+        >>> x = torch.zeros(1, 2, 32, 32)
+        >>> prox.update(x)
+        >>> y = prox(x)
+        >>> y.shape
+        torch.Size([1, 2, 32, 32])
+
+    References:
+        Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+        reconstruction algorithms in radio interferometry: From handcrafted to
+        learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+        *MNRAS, 518*(1), 604-622.
+
+        Combettes, P. L., & Pesquet, J.-C. (2011). `Proximal splitting methods
+        in signal processing <https://doi.org/10.1007/978-1-4419-9569-8_10>`_.
+        In H. H. Bauschke, R. S. Burachik, P. L. Combettes, V. Elser,
+        D. R. Luke, & H. Wolkowicz (Eds.), *Fixed-point algorithms for inverse
+        problems in science and engineering* (pp. 185-212). Springer.
     """
 
     def __init__(
@@ -54,25 +112,34 @@ class ProxSARAPos(Regulariser):
         dtype: torch.dtype = torch.float,
         verbose: Union[bool, int] = True,
     ) -> None:
-        """
-        Initializes the SARA positivity proximity operator with the given parameters.
+        """Initialise the uSARA positivity proximal operator.
 
         Args:
-            img_size (Tuple[int, int]): The size of the image.
-            sfth_val (torch.Tensor, optional): The soft thresholding value. Defaults to 1.0e-4.
-            wl_dict (Tuple[str, ...], optional): The wavelet dictionary.
-                Defaults to ("dirac", "db1", "db2", "db3", "db4", "db5", "db6", "db7", "db8").
-            dec_lev (int, optional): The decomposition level. Defaults to 4.
-            wl_noise_floor (torch.Tensor, optional): The noise floor level in wavelet coefficient.
-                Defaults to 1.0e-4.
-            mode (str, optional): The mode for wavelet decomposition and reconstruction.
-                Defaults to "zero".
-            max_iter (int, optional): The maximum number of iterations. Defaults to 20.
-            obj_tol (float, optional): The tolerance for the objective function. Defaults to 1e-4.
-            device (torch.device, optional): The device on which the computations are performed.
-                Defaults to torch.device("cpu").
-            dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
-            verbose (bool, optional): If True, print progress messages. Defaults to True.
+            img_size (Tuple[int, int]): Image spatial shape ``(H, W)``.
+            rank_num_ch (int, optional): Number of channels handled by this
+                rank. Default: 1.
+            rank_ch_start (int, optional): Global start index of local
+                channels. Default: 0.
+            wl_dict (Tuple[str, ...], optional): Wavelet dictionary including
+                optional ``"dirac"``. Default: ("dirac", "db1", "db2", "db3",
+                "db4", "db5", "db6", "db7", "db8").
+            dec_lev (int, optional): Wavelet decomposition depth. Default: 4.
+            mode (str, optional): Boundary mode for wavelet transforms.
+                Default: "zero".
+            sfth_val (Optional[torch.Tensor], optional): Soft-thresholding level
+                per channel. Default: None.
+            wl_noise_floor (Optional[torch.Tensor], optional): Reweighting noise
+                floor per channel. Default: None.
+            max_iter (int, optional): Maximum dual forward-backward iterations.
+                Default: 20.
+            obj_tol (float, optional): Relative objective tolerance used for
+                stopping. Default: 1e-4.
+            device (torch.device, optional): Execution device. Default:
+                torch.device("cpu").
+            dtype (torch.dtype, optional): Tensor dtype for computation.
+                Default: torch.float.
+            verbose (Union[bool, int], optional): Verbosity level. Default:
+                True.
         """
         super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
@@ -102,8 +169,17 @@ class ProxSARAPos(Regulariser):
         if self._dirac:
             self._wl_dict.remove("dirac")
 
-        # initialise dual variable
+        # Initialise the dual variables with the coefficient structure induced
+        # by the configured wavelet dictionary.
         self._dual = self._wavedec2_dict(
+            torch.zeros(
+                (1, self._rank_num_ch, *self._img_size),
+                device=self._device,
+                dtype=self._dtype,
+            )
+        )
+        # Initialise the reweighting coefficients to ones with zero image cube.
+        self.update(
             torch.zeros(
                 (1, self._rank_num_ch, *self._img_size),
                 device=self._device,
@@ -112,21 +188,13 @@ class ProxSARAPos(Regulariser):
         )
 
     def _wavedec2_dict(self, x: torch.Tensor) -> WaveletDictCoeff:
-        """
-        Performs wavelet decomposition with multiple bases on the input tensor.
+        """Decompose input tensors with the configured wavelet dictionary.
 
         Args:
-            x (torch.Tensor): The input tensor to be decomposed.
+            x (torch.Tensor): Input tensor with shape ``(1, C, H, W)``.
 
         Returns:
-            WaveletDictCoeff:
-                A list of wavelet coefficients. Each element in the list corresponds to the
-                wavelet decomposition with one basis. For each basis, the wavelet coefficients
-                are stored in a list where the first element is the approximation coefficients,
-                and the following tuple of three tensors corresponding to the horizontal, vertical,
-                and diagonal details. If the dirac basis is used, the last element in the list is
-                the scaled input tensor.
-
+            WaveletDictCoeff: Structured wavelet coefficients for each basis.
         """
         coeff: WaveletDictCoeff = []
         for basis in self._wl_dict:
@@ -141,20 +209,14 @@ class ProxSARAPos(Regulariser):
         return coeff
 
     def _waverec2_dict(self, y: WaveletDictCoeff) -> torch.Tensor:
-        """
-        Performs wavelet reconstruction with multiple bases on the input tensor.
+        """Reconstruct tensors from dictionary wavelet coefficients.
 
         Args:
-            y (WaveletDictCoeff):
-                A list of wavelet coefficients. Each element in the list corresponds to the
-                wavelet decomposition with one basis. For each basis, the wavelet coefficients
-                are stored in a list where the first element is the approximation coefficients,
-                and the following tuple of three tensors corresponding to the horizontal, vertical,
-                and diagonal details. If the dirac basis is used, the last element in the list is
-                the scaled input tensor.
+            y (WaveletDictCoeff): Coefficients generated by
+                :meth:`_wavedec2_dict`.
 
         Returns:
-            torch.Tensor: The reconstructed image.
+            torch.Tensor: Reconstructed tensor with shape ``(1, C, H, W)``.
         """
         result = torch.zeros(
             1,
@@ -170,15 +232,14 @@ class ProxSARAPos(Regulariser):
         return result
 
     def _prox_l1_adj(self, z: torch.Tensor, sfth: torch.Tensor) -> torch.Tensor:
-        """
-        Proximity operator for the adjoint of l1 norm.
+        """Apply the proximal map of the adjoint :math:`\ell_1` norm.
 
         Args:
-            z (torch.Tensor): The input tensor.
-            sfth (torch.Tensor): The soft thresholding level. The level can be
-                different for each channel.
+            z (torch.Tensor): Input coefficient tensor.
+            sfth (torch.Tensor): Soft-thresholding levels.
+
         Returns:
-            torch.Tensor: The result of applying the proximity operator on `z`.
+            torch.Tensor: Thresholded coefficients.
         """
         return z - (
             torch.sign(z)
@@ -189,12 +250,15 @@ class ProxSARAPos(Regulariser):
         )
 
     def _sfth_dual(self, psit_img: WaveletDictCoeff) -> None:
-        """
-        Applies soft thresholding to `psit_img` and update the dual variable.
+        """Threshold coefficients and update dual variables.
 
         Args:
-            psit_img (WaveletDictCoeff):
-                The list of wavelet coeeficitents on which soft thresholding will be applied.
+            psit_img (WaveletDictCoeff): Wavelet coefficients of the current
+                primal iterate.
+
+        Notes:
+            This method updates ``self._dual`` in place and refreshes
+            ``self._norm_l1`` for the stopping criterion.
         """
         norm_l1_ch = torch.zeros(
             1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
@@ -234,20 +298,23 @@ class ProxSARAPos(Regulariser):
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Apply the proximity operator to the input tensor.
-        The SARA prior and positivity constraint are splited with dual forward-backward algorithm.
+        """Run the uSARA proximal step.
 
         Args:
-            x (torch.Tensor): The input tensor.
+            x (torch.Tensor): Input tensor with shape ``(1, C, H, W)``.
 
         Returns:
-            torch.Tensor: The output tensor after applying the proximity operator.
+            torch.Tensor: Positivity-constrained proximal output.
+
+        Notes:
+            This method runs a dual forward-backward loop that alternates
+            primal positivity projection and weighted wavelet soft thresholding.
         """
-        # dual forward backward
+        # Dual forward-backward iterations: primal positivity projection and
+        # dual weighted-thresholding updates.
         obj_val_prev = 0
         for i in range(self._max_iter):
-            # primal update
+            # Primal update (positivity projection).
             result = torch.maximum(
                 x - self._waverec2_dict(self._dual),
                 torch.tensor(
@@ -257,10 +324,11 @@ class ProxSARAPos(Regulariser):
                 ),
             )
             norm_l2_2 = torch.sum((result - x) ** 2)
-            # dual update
+            # Dual update (weighted wavelet soft-thresholding).
             self._sfth_dual(self._wavedec2_dict(result))
-            # stop criterion
+            # Objective-based stopping criterion.
             if self._is_dist:
+                # Aggregate objective terms across distributed ranks.
                 dist.all_reduce(norm_l2_2, op=dist.ReduceOp.SUM)
                 dist.all_reduce(self._norm_l1, op=dist.ReduceOp.SUM)
             obj_val = 0.5 * norm_l2_2.item() + self._norm_l1.item()
@@ -283,14 +351,15 @@ class ProxSARAPos(Regulariser):
 
         return result
 
-    def update(self, x: torch.Tensor) -> None:  # initialisation: bool = False
-        """
-        Update the weight for l1 norm.
+    def update(self, x: torch.Tensor) -> None:
+        """Update per-coefficient reweighting factors.
 
         Args:
-            x (torch.Tensor): The input tensor.
-            initialisation (bool, optional): If True, initialize the weights to 1.
-                Defaults to False.
+            x (torch.Tensor): Input tensor used to recompute SARA weights.
+
+        Notes:
+            Reweighting is computed independently for each wavelet basis and,
+            when enabled, for the Dirac component.
         """
         self._weights = []
 
@@ -318,31 +387,29 @@ class ProxSARAPos(Regulariser):
             )
 
     def get_l1_norm(self) -> float:
-        """
-        Gets the latest l1 norm calculated in `_sfth_dual`.
+        """Return the latest weighted :math:`\ell_1` norm value.
 
         Returns:
-            float: The latest l1 norm.
+            float: Last objective regularisation term.
         """
         return self._norm_l1.item()
 
     def set_noise_floor_level(self, wl_noise_floor: torch.Tensor) -> None:
-        """
-        Sets the noise floor level in wavelet coefficient.
+        """Set the wavelet reweighting noise floor.
 
         Args:
-            wl_noise_floor (float): The noise floor level to set.
+            wl_noise_floor (torch.Tensor): Per-channel noise-floor in the
+                wavelet coefficients.
         """
         self._wl_noise_floor = wl_noise_floor.reshape(1, self._rank_num_ch, 1, 1).to(
             device=self._device, dtype=self._dtype
         )
 
     def set_soft_thresholding_value(self, sfth_val: torch.Tensor) -> None:
-        """
-        Sets the soft thresholding level of the proximity operator.
+        """Set wavelet soft-thresholding levels.
 
         Args:
-            sfth_val (float): The soft thresholding level for the wavelet coefficients.
+            sfth_val (torch.Tensor): Per-channel threshold tensor.
         """
         self._sfth_val = sfth_val.reshape(1, self._rank_num_ch, 1, 1).to(
             device=self._device, dtype=self._dtype

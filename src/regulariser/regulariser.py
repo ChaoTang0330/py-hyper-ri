@@ -1,5 +1,7 @@
-"""
-Base class for proximity operator
+"""Define the abstract base API for regularisers.
+
+This file provides the shared constructor and minimal interface used by all
+regulariser implementations in this repository.
 """
 
 from abc import ABC, abstractmethod
@@ -10,14 +12,19 @@ import torch.distributed as dist
 
 
 class Regulariser(ABC):
-    """
-    Base class for regulariser.
+    """Define the base interface for regulariser operators.
 
-    This class provides the base functionality for a regulariser.
-    It defines common methods for various regularisers, such as
+    Subclasses implement :meth:`__call__` to apply a regularisation step and
+    :meth:`update` to refresh internal state between optimisation iterations.
 
-    applying the operator to an input and updating the operator.
-    The actual implementation of these methods are left to the subclasses.
+    Attributes:
+        _rank_num_ch (int): Number of channels assigned to this rank.
+        _rank_ch_start (int): Global index of the first local channel.
+        _device (torch.device): Device used for operator state and outputs.
+        _dtype (torch.dtype): Tensor dtype used by the operator.
+        _is_dist (bool): Whether distributed execution is enabled.
+        _rank (int): Distributed rank identifier (0 in non-distributed mode).
+        _world_size (int): Number of distributed ranks (1 in non-distributed mode).
     """
 
     def __init__(
@@ -27,76 +34,82 @@ class Regulariser(ABC):
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
     ) -> None:
-        """
-        Initialize the Regulariser class.
+        """Initialise shared regulariser state.
 
         Args:
-            device (torch.device, optional): The device for the tensors.
-                Defaults to torch.device("cpu").
-            dtype (torch.dtype, optional): The data type for the tensors.
-                Defaults to torch.float.
+            rank_num_ch (int, optional): Number of channels handled by this
+                rank. Default: 1.
+            rank_ch_start (int, optional): Global start index of local
+                channels. Default: 0.
+            device (torch.device, optional): Execution device for regulariser
+                state and outputs. Default: torch.device("cpu").
+            dtype (torch.dtype, optional): Tensor dtype used by the
+                regulariser. Default: torch.float.
+
+        Notes:
+            When torch.distributed is initialised, this constructor caches
+            rank metadata and chooses a point-to-point communication device
+            based on the active backend.
         """
         self._rank_num_ch = rank_num_ch
         self._rank_ch_start = rank_ch_start
         self._dtype = dtype
         self._device = device
 
-        # distributed parameters
+        # Distributed execution metadata.
         self._rank = 0
         self._world_size = 1
         self._is_dist = dist.is_available() and dist.is_initialized()
         if self._is_dist:
             self._rank = dist.get_rank()
             self._world_size = dist.get_world_size()
-            # device for p2p communication
+            # Select the device used for point-to-point communication buffers.
             dist_backend = dist.get_backend()
             if dist_backend == "nccl":
                 self._dist_device = torch.device("cuda")
             elif dist_backend == "xccl":
                 self._dist_device = torch.device("xpu")
             else:
-                # for gloo and mpi
+                # Backends such as gloo and mpi use host tensors.
                 self._dist_device = torch.device("cpu")
-            
 
     @abstractmethod
     def __call__(self, x: torch.Tensor) -> Any:
-        """
-        Apply regulariser to input.
+        """Apply the regulariser to an input tensor.
 
         Args:
-            x (torch.Tensor): The input tensor.
+            x (torch.Tensor): Input tensor in image domain.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Regularised output produced by a concrete implementation.
         """
         return NotImplemented
 
     @abstractmethod
     def update(self, *args, **kwargs) -> Any:
-        """
-        Update regulariser.
+        """Update internal regulariser state.
 
-        This method should be implemented in a subclass.
-        The input arguments can be arbitrary and should be specified in the subclass.
+        Args:
+            *args (Any): Positional arguments required by the subclass.
+            **kwargs (Any): Keyword arguments required by the subclass.
+
+        Returns:
+            Any: Optional update artefacts returned by the subclass.
         """
         return NotImplemented
 
     def get_device(self) -> torch.device:
-        """
-        Return the device that the regulariser is running on.
+        """Return the regulariser execution device.
 
         Returns:
-            torch.device: The device that the regulariser is running on.
+            torch.device: Device used for internal state and outputs.
         """
         return self._device
 
     def get_data_type(self) -> torch.dtype:
-        """
-        Return the data type of the data that the regulariser will accept and return.
+        """Return the regulariser tensor dtype.
 
         Returns:
-            torch.dtype: The data type of the data that the regulariser will accept
-                and return.
+            torch.dtype: Dtype expected for inputs and produced for outputs.
         """
         return self._dtype

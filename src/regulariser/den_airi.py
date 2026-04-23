@@ -1,10 +1,12 @@
-"""
-AIRI proximity operator
+"""Implement the AIRI denoiser regulariser.
+
+This file provides channel-wise AIRI denoising with per-channel network
+selection driven by heuristic noise and peak-intensity estimates.
 """
 
 import csv
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 from onnx2torch import convert
@@ -14,12 +16,56 @@ from ..interface.io import resolve_existing_file_path
 
 
 class DenAIRI(Regulariser):
-    """
-    AIRI denoiser
+    r"""Apply AIRI denoisers selected from a shelf of pretrained networks.
 
-    This class implements the AIRI denoiser which uses AIRI denoisers for regularisations.
-    It uses a shelf of pre-trained AIRI denoisers and selects the appropriate one based on
-    the estimated maximum intensitie of target image and the heuristic noise level.
+    This class implements the learned regularisation operator used by AIRI.
+    For each local channel :math:`c`, a pretrained denoiser
+    :math:`\mathcal{D}_{\sigma_c}` is selected from a denoiser shelf according
+    to the ratio between the heuristic noise level and the current peak-intensity
+    estimate. The denoised channel is then computed
+    as
+
+    .. math::
+        \hat{\mathbf{x}}_c
+        =
+        \rho_c \, \mathcal{D}_{\sigma_c}(\mathbf{x}_c / \rho_c),
+
+    where :math:`\rho_c` is the channel-dependent scaling factor and
+    :math:`\sigma_c` is the selected denoiser noise level.
+
+    Optional random flips and right-angle rotations are applied before
+    denoising and inverted afterwards as a lightweight self-ensembling step.
+
+    Shape:
+        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+          current rank.
+        - Output: ``(1, C, H, W)`` with the same shape as the input tensor.
+
+    Attributes:
+        _shelf (dict[float, str]): Mapping from shelf noise level to ONNX model
+            path.
+        _list_network (list): Loaded denoiser used for each local channel.
+        _list_net_scaling (list[float]): Per-channel scaling factor
+            :math:`\rho_c`.
+        _list_network_sigma (list[float]): Active shelf noise level for each
+            local channel.
+
+    Example:
+        >>> den = DenAIRI(
+        ...     shelf_path="airi_denoisers/shelf_airi_oaid.csv",
+        ...     rank_num_ch=1,
+        ... )
+        >>> heu = torch.ones(1, 1, 1, 1)
+        >>> peak = torch.ones(1, 1, 1, 1)
+        >>> den.update(heu, peak)
+        >>> x = torch.zeros(1, 1, 16, 16)
+        >>> y = den(x)
+
+    References:
+        Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+        reconstruction algorithms in radio interferometry: From handcrafted to
+        learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+        *MNRAS, 518*(1), 604-622.
     """
 
     def __init__(
@@ -32,17 +78,26 @@ class DenAIRI(Regulariser):
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
     ) -> None:
-        """
-        Initializes the AIRI denoiser with the given parameters.
+        """Initialise AIRI shelf metadata and runtime state.
 
         Args:
-            shelf_path (str): Path to the CSV file containing the denoiser shelf.
-            rand_trans (bool, optional): If True, apply random transformations to the input
-                before applying denoisers. Defaults to True.
-            device (torch.device, optional): The device on which the computations are
-                performed. Defaults to torch.device("cpu").
-            dtype (torch.dtype, optional): The data type of the input. Defaults to torch.float.
-            verbose (bool, optional): If True, print progress messages. Defaults to True.
+            shelf_path (str): Path to the denoiser shelf CSV.
+            rand_trans (bool, optional): Apply random flips/rotations before and
+                after denoising. Default: True.
+            rank_num_ch (int, optional): Number of channels handled by this
+                rank. Default: 1.
+            rank_ch_start (int, optional): Global start index of local
+                channels. Default: 0.
+            device (torch.device, optional): Execution device. Default:
+                torch.device("cpu").
+            dtype (torch.dtype, optional): Tensor dtype for denoising tensors.
+                Default: torch.float.
+            verbose (bool, optional): Enable shelf-selection logs. Default: True.
+
+        Raises:
+            FileNotFoundError: If the denoiser shelf CSV or network files in the
+                shelf cannot be found.
+            RuntimeError: If the denoiser shelf CSV contains no usable entries.
         """
         super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
 
@@ -74,14 +129,18 @@ class DenAIRI(Regulariser):
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Applies the AIRI prox operator to the input tensor.
+        """Denoise all local channels of an image cube.
 
         Args:
-            x (torch.Tensor): The input tensor.
+            x (torch.Tensor): Input tensor with shape ``(1, C, H, W)``.
 
         Returns:
-            torch.Tensor: The denoised tensor.
+            torch.Tensor: Denoised tensor with the same shape as ``x``.
+
+        Notes:
+            The method :meth:`update` must be called with valid heuristic noise level
+            and peak-intensity estimates before this method is used, so that the
+            appropriate denoisers are selected and loaded for each channel.
         """
         result = x
         for ch in range(self._rank_num_ch):
@@ -91,15 +150,15 @@ class DenAIRI(Regulariser):
 
     @torch.no_grad()
     def _den_ch_single(self, net_input: torch.Tensor, ch: int) -> torch.Tensor:
-        """
-        Applies the AIRI denoiser to a single channel of the input tensor.
+        """Denoise one local channel using the selected shelf network.
 
         Args:
-            net_input (torch.Tensor): The input tensor for a single channel.
-            ch (int): The channel index to be denoised.
+            net_input (torch.Tensor): Local image cube for this rank.
+            ch (int): Local channel index to denoise.
 
         Returns:
-            torch.Tensor: The denoised tensor for the specified channel.
+            torch.Tensor: Denoised tensor for channel ``ch`` with shape
+            ``(1, 1, H, W)``.
         """
         x = net_input[:, ch : ch + 1, :, :]
         if self._rand_trans:
@@ -124,14 +183,24 @@ class DenAIRI(Regulariser):
         self,
         ch_heuristic: torch.Tensor,
         ch_peak_est: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Updates the denoiser selection and scaling factor based on the given
-        heuristic noise level and maximum intensity.
+    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+        """Update per-channel network selection and scaling factors.
 
         Args:
-            heuristic (float): The heuristic noise level.
-            peak_est (float): The estimated maximum intensity.
+            ch_heuristic (torch.Tensor): Per-channel heuristic noise levels
+                with one value per local channel.
+            ch_peak_est (torch.Tensor): Per-channel peak-intensity estimates
+                with one value per local channel.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Lower and upper admissible peak
+            ranges for each local channel, each with shape ``(1, C, 1, 1)``.
+            Returns ``None`` when ``ch_heuristic`` or ``ch_peak_est`` is
+            ``None``.
+
+        Notes:
+            The selected network for each channel is refreshed only when the
+            admissible shelf sigma changes.
         """
         peak_min = torch.zeros(self._rank_num_ch, dtype=self._dtype)
         peak_max = torch.zeros(self._rank_num_ch, dtype=self._dtype)
@@ -143,6 +212,8 @@ class DenAIRI(Regulariser):
                 ch_heu_peak = [float(ch_heu_peak)]
 
             for i in range(self._rank_num_ch):
+                # Pick the shelf entry whose sigma is closest from below to the
+                # heuristic ratio for this channel.
                 sigma_s = max(
                     filter(
                         lambda sigma: sigma <= ch_heu_peak[i],
@@ -159,11 +230,15 @@ class DenAIRI(Regulariser):
                     if sigma_s1 is not None:
                         peak_min[i] = ch_heuristic.view(-1)[i] / sigma_s1
                 else:
+                    # If the heuristic ratio is below the shelf range, use the
+                    # smallest available denoiser sigma as a safe fallback.
                     sigma_s = min(self._shelf.keys())
                     peak_min[i] = ch_heuristic.view(-1)[i] / sigma_s
                     peak_max[i] = float("inf")
 
                 if abs(self._list_network_sigma[i] - sigma_s) > 1e-10:
+                    # Reload the ONNX model only when the selected shelf entry
+                    # changes.
                     self._list_network[i] = (
                         convert(self._shelf[sigma_s]).to(self._device).eval()
                     )
@@ -185,3 +260,5 @@ class DenAIRI(Regulariser):
             peak_max = peak_max.view(1, -1, 1, 1).to(device=self._device)
 
             return (peak_min, peak_max)
+
+        return None
