@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from src.ri_measurement_operator import MeasOpHyperspectral
+from src.measurement_operator import MeasOpHyperspectral
 
 from .meas_op_helpers import create_random_uv
 

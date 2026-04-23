@@ -9,7 +9,7 @@ import torch
 import torch.distributed as dist
 import numpy as np
 
-from ..ri_measurement_operator import MeasOp
+from ..measurement_operator import MeasOp
 
 
 class Optimiser(ABC):

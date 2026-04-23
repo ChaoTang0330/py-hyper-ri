@@ -12,7 +12,7 @@ from astropy.io import fits
 
 from .optimiser import Optimiser
 from ..regulariser import Regulariser
-from ..ri_measurement_operator import MeasOp
+from ..measurement_operator import MeasOp
 
 
 class ForwardBackward(Optimiser):

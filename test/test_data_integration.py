@@ -7,7 +7,7 @@ import torch
 from astropy.io import fits
 
 from src.interface.load_data import load_data_to_tensor
-from src.ri_measurement_operator import MeasOpHyperspectral
+from src.measurement_operator import MeasOpHyperspectral
 
 
 TEST_MEAS_PATH = os.path.join(

@@ -6,8 +6,8 @@ import numpy as np
 from astropy.io import fits
 
 # from .utils import gen_imaging_weight
-from src.ri_measurement_operator.pysrc.utils.io_hs import load_data_to_tensor_hs
-from src.ri_measurement_operator.pysrc.measOperator.meas_op_hs import MeasOpHyperspectral
+from src.measurement_operator.pysrc.utils.io_hs import load_data_to_tensor_hs
+from src.measurement_operator.pysrc.measOperator.meas_op_hs import MeasOpHyperspectral
 
 def env_int(name: str, default: int) -> int:
     v = os.environ.get(name)

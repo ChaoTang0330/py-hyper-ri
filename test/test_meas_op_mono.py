@@ -157,7 +157,7 @@ def test_nufft_data_weight_changes_output(backend: str) -> None:
 
     # Rebuild backend op with changed natural weights.
     if backend == "finufft":
-        from src.ri_measurement_operator import MeasOpFinufft
+        from src.measurement_operator import MeasOpFinufft
 
         assert traj.shape == (2, n_samples)  # FINUFFT trajectory shape
         v = traj[0:1, :].unsqueeze(0)
@@ -174,7 +174,7 @@ def test_nufft_data_weight_changes_output(backend: str) -> None:
             dtype=torch.float32,
         )
     else:
-        from src.ri_measurement_operator import MeasOpTkbn
+        from src.measurement_operator import MeasOpTkbn
 
         assert traj.shape == (1, 2, n_samples)  # KbNUFFT trajectory shape
         v = traj[:, 0:1, :]

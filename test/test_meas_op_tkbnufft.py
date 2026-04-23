@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from src.ri_measurement_operator import MeasOpTkbn
+from src.measurement_operator import MeasOpTkbn
 
 from .meas_op_helpers import create_random_uv, create_test_image
 

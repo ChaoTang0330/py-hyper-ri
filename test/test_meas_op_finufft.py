@@ -2,7 +2,7 @@
 
 import torch
 
-from src.ri_measurement_operator import MeasOpFinufft
+from src.measurement_operator import MeasOpFinufft
 
 from .meas_op_helpers import create_random_uv, create_test_image
 

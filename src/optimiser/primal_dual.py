@@ -12,7 +12,7 @@ from astropy.io import fits
 
 from .optimiser import Optimiser
 from ..regulariser import Regulariser, ProxEllipsoid
-from ..ri_measurement_operator import MeasOpHyperspectral
+from ..measurement_operator import MeasOpHyperspectral
 
 
 class PrimalDualPrecond(Optimiser):

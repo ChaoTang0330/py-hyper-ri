@@ -11,7 +11,7 @@ from astropy.io import fits
 
 from .forward_backward import ForwardBackward
 from ..regulariser import DenHyperAIRI
-from ..ri_measurement_operator import MeasOpHyperspectral
+from ..measurement_operator import MeasOpHyperspectral
 from ..interface import fit_clean_beam, get_spec_idx
 
 

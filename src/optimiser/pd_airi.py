@@ -11,7 +11,7 @@ from astropy.io import fits
 
 from .primal_dual import PrimalDualPrecond
 from ..regulariser import DenAIRI, ProxEllipsoid
-from ..ri_measurement_operator import MeasOpHyperspectral
+from ..measurement_operator import MeasOpHyperspectral
 from ..interface import get_spec_idx
 
 
