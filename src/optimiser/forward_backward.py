@@ -1,31 +1,65 @@
-"""
-Forward-backward algorithm
+"""Define the shared forward-backward optimiser implementation.
+
+This module provides the forward-backward backbone used by the AIRI and SARA
+optimisers. It handles the common forward step, proximal backward step,
+timing, and heuristic noise-level estimation shared by those variants.
 """
 
 import os
-from typing import Optional
 from timeit import default_timer as timer
+from typing import List, Optional
+
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
-from .optimiser import Optimiser
-from ..regulariser import Regulariser
 from ..measurement_operator import MeasOp
+from ..regulariser import Regulariser
+from .optimiser import Optimiser
 
 
 class ForwardBackward(Optimiser):
-    """
-    This class implements the forward-backward algorithm.
+    """Represent a shared forward-backward optimisation backbone.
 
-    We here assume the data fidelity term is differentiable and the regularisation term is
-    non-differentiable.
+    This class implements a forward-backward scheme in which the data-fidelity
+    term is differentiable and the regularisation term is applied through a
+    backward proximal step. Concrete optimiser subclasses define the
+    initialisation, stopping criterion, per-iteration bookkeeping, and
+    finalisation policy on top of this common loop.
+
+    Attributes:
+        _meas_op_precise (MeasOp): Measurement operator used to compute the
+            dirty image, PSF, and norm-based heuristics.
+        _heu_noise_scale (float): User-defined multiplicative scaling applied
+            to heuristic noise levels.
+        _regulariser (Regulariser): Regulariser or proximal operator used in
+            the backward step.
+        _start_iter (int): Starting iteration index.
+        _im_max_itr (int): Maximum number of forward-backward iterations.
+        _gd_step_size (float): Forward-step gradient-descent step size.
+        _t_total (float): Total optimisation time in seconds.
+        _t_iter (float): Last iteration time in seconds.
+        _t_forward (float): Last forward-step time in seconds.
+        _t_backward (float): Last backward-step time in seconds.
+        _iter (int): Current iteration index.
+        _forward_cuda_timing (bool): Whether CUDA events time the forward step.
+        _backward_cuda_timing (bool): Whether CUDA events time the backward
+            step.
+        _psf_peak (torch.Tensor): Per-channel PSF peak values.
+        _heuristic (torch.Tensor | None): Cached heuristic noise levels.
+
+    References:
+        Combettes, P. L., & Pesquet, J.-C. (2011). `Proximal splitting methods
+        in signal processing <https://doi.org/10.1007/978-1-4419-9569-8_10>`_.
+        In H. H. Bauschke, R. S. Burachik, P. L. Combettes, V. Elser,
+        D. R. Luke, & H. Wolkowicz (Eds.), *Fixed-point algorithms for inverse
+        problems in science and engineering* (pp. 185-212). Springer.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOp,
         regulariser: Regulariser,
@@ -36,19 +70,35 @@ class ForwardBackward(Optimiser):
         file_prefix: str = "",
         rank_ch_start: int = 0,
     ) -> None:
-        """
-        Initializes the ForwardBackward optimiser.
+        """Initialise the shared forward-backward optimiser state.
 
         Args:
-            meas (torch.Tensor): The measurement tensor.
-            ch_freq (torch.Tensor): The frequency of each channel.
-            meas_op (MeasOp): The measurement operator.
-            meas_op_precise (Optional[MeasOp]): The precise measurement operator.
-            regulariser (Regulariser): The regulariser.
-            im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
-            save_pth (str, optional): The path where results will be saved. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to None.
-            rank_ch_start (int, optional): The starting channel index for the current rank. Defaults to 0.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for the local spectral
+                channels.
+            meas_op (MeasOp): Measurement operator used inside the iterative
+                forward step.
+            regulariser (Regulariser): Regulariser or proximal operator applied
+                in the backward step.
+            meas_op_precise (MeasOp | None, optional): Measurement operator
+                used for dirty-image, PSF, and heuristic calculations. If
+                None, reuses ``meas_op``. Default: None.
+            heu_noise_scale (float, optional): User-specified multiplicative
+                factor applied to heuristic noise estimates. Default: 1.0.
+            im_max_itr (int, optional): Maximum number of iterations.
+                Default: 2000.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+
+        Notes:
+            This constructor computes and stores the dirty image and PSF before
+            the main optimisation loop starts, then writes them to FITS files
+            on rank 0.
         """
         super().__init__(
             meas,
@@ -67,7 +117,7 @@ class ForwardBackward(Optimiser):
         self._im_max_itr = im_max_itr
         self._gd_step_size = 1.0
 
-        # timing
+        # Cache wall-clock timing statistics for logging and diagnostics.
         self._t_total = 0.0
         self._t_iter = 0.0
         self._t_forward = 0.0
@@ -75,7 +125,7 @@ class ForwardBackward(Optimiser):
 
         self._iter = 0
 
-        # cuda event
+        # Enable CUDA-event timing only when the relevant step runs on CUDA.
         self._forward_cuda_timing = False
         self._backward_cuda_timing = False
         if self._meas_op.get_device() == torch.device("cuda"):
@@ -83,7 +133,7 @@ class ForwardBackward(Optimiser):
         if self._regulariser.get_device() == torch.device("cuda"):
             self._backward_cuda_timing = True
 
-        # save dirty image and psf
+        # Precompute dirty image and PSF products used by concrete subclasses.
         self._meas_bp = self._meas_op_precise.adjoint_op(self._meas).to(
             device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
         )
@@ -104,18 +154,19 @@ class ForwardBackward(Optimiser):
                 overwrite=True,
             )
 
-        # heuristic noise level
+        # Allocate the heuristic-noise cache lazily.
         self._heuristic = None
 
     @torch.inference_mode()
     def run(self) -> None:
-        """
-        Runs the main loop of the forward-backward algorithm.
+        """Run the forward-backward optimisation loop.
 
-        This method performs the forward and backward steps of the algorithm
-        in a loop until the stop criteria is met.
+        This method alternates a gradient-descent step on the differentiable
+        data-fidelity term with a proximal regularisation step until the
+        subclass-defined stopping criterion is met or the maximum iteration
+        count is reached.
         """
-        # timing with cuda events
+        # Create CUDA events only on rank 0 when CUDA timing is enabled.
         if self._forward_cuda_timing and self._rank == 0:
             forward_start_event = torch.cuda.Event(enable_timing=True)
             forward_end_event = torch.cuda.Event(enable_timing=True)
@@ -131,7 +182,7 @@ class ForwardBackward(Optimiser):
             self._t_iter = timer()
             self._each_iter_begin()
 
-            # forward step
+            # Forward step: gradient descent on the data-fidelity term.
             if self._forward_cuda_timing:
                 if self._rank == 0:
                     forward_start_event.record()
@@ -141,6 +192,8 @@ class ForwardBackward(Optimiser):
                 self._meas_op.adjoint_op(self._meas_op.forward_op(self._model))
                 - self._meas_bp
             )
+            # Move the gradient step to the regulariser device for the
+            # proximal backward step.
             x_hat = x_hat.to(
                 device=self._regulariser.get_device(),
                 dtype=self._regulariser.get_data_type(),
@@ -159,7 +212,7 @@ class ForwardBackward(Optimiser):
             else:
                 self._t_forward = timer() - self._t_forward
 
-            # backward step
+            # Backward step: apply the proximal regulariser on its own device.
             if self._backward_cuda_timing:
                 if self._rank == 0:
                     backward_start_event.record()
@@ -195,15 +248,36 @@ class ForwardBackward(Optimiser):
 
     @torch.no_grad()
     def _calculate_channel_wise_heuristic(self) -> None:
-        """
-        Calculates the heuristic noise level for each channel.
+        r"""Compute heuristic noise levels for local channels.
 
-        This method computes the heuristic noise level based on the measurement operator
-        and the measurements. It also applies any correction or scaling factors to the
-        heuristic noise level if imaging weight and/or scaling factor are specified.
+        The heuristic is derived from channel-wise operator norms and can be
+        corrected for twice-applied image weighting and scaled by the
+        user-provided ``heu_noise_scale`` factor.
 
-        The result heuristic noise level is saved in the attribute `_heuristic`, which
-        is a tensor of shape (1, C, 1, 1).
+        For each local channel, the base heuristic is computed as
+        :math:`h_c = 1 / \sqrt{2 L_c}`, where
+        :math:`L_c = \lVert \Phi_c^\dagger \Phi_c \rVert_\mathrm{S}` is the
+        channel-wise operator norm returned by
+        ``self._meas_op_precise.get_op_norm_ch()``.
+
+        If the image weighting is integrated, the heuristic noise level is corrected
+        by the factor
+        :math:`\sqrt{L^\prime_c / L_c}`, where
+        :math:`L^\prime_c = \lVert \Phi_c^\dagger W^\dagger W \Phi_c \rVert_\mathrm{S}`.
+
+        Returns:
+            None: The heuristic is stored in ``self._heuristic``.
+
+        References:
+            Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+            reconstruction algorithms in radio interferometry: From handcrafted to
+            learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+            *MNRAS, 518*(1), 604-622.
+
+            Wilber, A. G., Dabbech, A., Jackson, A., & Wiaux, Y. (2023). `Scalable
+            precision wide-field imaging in radio interferometry: I. uSARA
+            validated on ASKAP data <https://doi.org/10.1093/mnras/stad1351>`_.
+            *MNRAS, 522*(4), 5558-5575.
         """
 
         self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op_precise.get_op_norm_ch())
@@ -219,9 +293,11 @@ class ForwardBackward(Optimiser):
             if not isinstance(heuristic_list, list):
                 heuristic_list = [heuristic_list]
             print(
-                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
+                f"INFO: channel {self._rank_ch_start + 1} - "
+                f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"op norm [{', '.join(f'{val:.4e}' for val in op_norm_ch_list)}], "
-                f"heuristic noise level [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                f"heuristic noise level "
+                f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                 flush=True,
             )
 
@@ -248,9 +324,12 @@ class ForwardBackward(Optimiser):
                 if not isinstance(heu_corr_factor_list, list):
                     heu_corr_factor_list = [heu_corr_factor_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after correction: [{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
-                    f"correction factor [{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"heuristic noise level after correction: "
+                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
+                    f"correction factor "
+                    f"[{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
                     flush=True,
                 )
         if not np.isclose(self._heu_noise_scale, 1.0):
@@ -260,7 +339,8 @@ class ForwardBackward(Optimiser):
                     dist.barrier()
                 if self._rank == 0:
                     print(
-                        f"INFO: apply user specified heuristic noise scale {self._heu_noise_scale}",
+                        f"INFO: apply user specified heuristic "
+                        f"noise scale {self._heu_noise_scale}",
                         flush=True,
                     )
                 if self._is_distributed:
@@ -269,7 +349,9 @@ class ForwardBackward(Optimiser):
                 if not isinstance(heuristic_list, list):
                     heuristic_list = [heuristic_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after scaling: [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"heuristic noise level after scaling: "
+                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                     flush=True,
                 )

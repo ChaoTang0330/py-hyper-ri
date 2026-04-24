@@ -1,5 +1,7 @@
-"""
-Optimiser
+"""Expose public optimiser classes.
+
+This module provides the base optimiser interface together with the
+forward-backward and primal-dual variants used by the imaging pipeline.
 """
 
 from .optimiser import Optimiser

@@ -21,8 +21,8 @@ class MeasOpPSF(MeasOp):
     to evaluate adjoint applications efficiently by FFT-based convolution.
 
     Shape:
-        Image tensors: ``(1, 1, H, W)``.
-        Visibility-domain tensors: Not used explicitly; this operator applies a
+        Image tensor: ``(1, 1, H, W)``.
+        Visibility tensor: Not used explicitly; this operator applies a
             PSF-based approximation in the image domain.
         Sampling-pattern coordinates :math:`u` and :math:`v`: ``(1, 1, N)``.
 

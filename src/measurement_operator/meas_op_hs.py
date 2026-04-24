@@ -22,8 +22,8 @@ class MeasOpHyperspectral(MeasOp):
     norm estimation can aggregate local contributions across distributed ranks.
 
     Shape:
-        Image tensors: ``(1, C_rank, H, W)``.
-        Visibility-domain tensors: tuple of ``C_rank`` tensors, each with shape
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
             ``(1, 1, N_c)``.
         Sampling-pattern coordinates :math:`u` and :math:`v`: tuples of ``C_rank``
             tensors, each with shape ``(1, 1, N_c)``.

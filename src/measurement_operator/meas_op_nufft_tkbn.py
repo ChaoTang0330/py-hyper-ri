@@ -21,8 +21,8 @@ class MeasOpTkbn(MeasOpNUFFT):
     backend-specific interpolation modes supported by TorchKbNUFFT.
 
     Shape:
-        Image tensors: ``(1, 1, H, W)``.
-        Visibility-domain tensors: ``(1, 1, N)``.
+        Image tensor: ``(1, 1, H, W)``.
+        Visibility tensor: ``(1, 1, N)``.
         Sampling-pattern coordinates :math:`u` and :math:`v`: ``(1, 1, N)``.
 
     Attributes:

@@ -1,33 +1,85 @@
-"""
-uSARA algorithm, built on forward-backward algorithm
+"""Define the uSARA optimiser built on the forward-backward backbone.
+
+This module provides the reweighted sparse-analysis optimiser used for
+hyperspectral RI imaging with positivity and SARA regularisation.
 """
 
 import os
-from typing import Optional
 from timeit import default_timer as timer
+from typing import List, Optional
 
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
-from .forward_backward import ForwardBackward
-from ..regulariser import ProxSARAPos
-from ..measurement_operator import MeasOpHyperspectral
 from ..interface.spectral_index import get_spec_idx
+from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import ProxSARAPos
+from .forward_backward import ForwardBackward
 
 
 class FBSARA(ForwardBackward):
-    """
-    FBSARA implements uSARA algorithm based on forward-backward algorithm.
+    """Represent the uSARA forward-backward optimiser.
 
-    It handles data fidelity in the forward step and uses SARA prior and
-    positivity constrained in the backward step for regularization.
+    This class combines the shared forward-backward optimisation loop with the
+    SARA reweighting strategy and a positivity-constrained proximal operator.
+    It alternates inner forward-backward iterations with outer reweighting
+    cycles until both inner-loop and outer-loop stopping criteria are met.
+
+    Shape:
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
+            ``(1, 1, N_c)``.
+        Frequency tensor: ``(1, C_rank, 1, 1)`` after reshaping in the base
+            optimiser.
+
+    Attributes:
+        _use_approx_meas_op (bool): Whether an approximate measurement operator
+            is used in the iterative forward step.
+        _im_max_itr_inner (int): Maximum number of inner forward-backward
+            iterations per major cycle.
+        _im_min_itr (int): Minimum number of inner iterations before checking
+            convergence.
+        _im_var_tol (float): Relative-variation tolerance for inner iterations.
+        _im_max_itr_outer (int): Maximum number of reweighting cycles.
+        _im_var_tol_outer (float): Relative-variation tolerance for
+            reweighting cycles.
+        _reweight_save (bool): Whether intermediate reweighting products are
+            saved to disk.
+        _verbose (bool): Whether informational logs are printed.
+        _model_prev_re (torch.Tensor): Model image cached at the previous
+            reweighting cycle.
+        _iter_inner (int): Current inner-loop iteration index.
+        _iter_outer (int): Current outer-loop iteration index.
+        _reweighting_flag (bool): Whether a reweighting update should be
+            applied at the end of the current iteration.
+        _t_iter_outer (float): Elapsed time of the current reweighting cycle.
+        _im_rel_var (float): Current inner-loop relative image variation.
+        _im_rel_var_outer (float): Current outer-loop relative image
+            variation.
+
+    Example:
+        >>> optimiser = FBSARA(
+        ...     meas=meas,
+        ...     ch_freq=ch_freq,
+        ...     meas_op=meas_op,
+        ...     regulariser=regulariser,
+        ... )
+        >>> optimiser.initialisation()
+        >>> optimiser.run()
+        >>> optimiser.finalisation()
+
+    References:
+        Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+        reconstruction algorithms in radio interferometry: From handcrafted to
+        learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+        *MNRAS, 518*(1), 604-622.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxSARAPos,
@@ -44,29 +96,48 @@ class FBSARA(ForwardBackward):
         reweight_save: bool = True,
         verbose: bool = True,
     ) -> None:
-        """
-        Initializes the uSARA optimiser, which is built on forward-backward algorithm.
+        """Initialise the uSARA optimiser.
 
         Args:
-            meas (torch.Tensor): The measurements to be used in the algorithm.
-            meas_op (MeasOpHyperspectral): The measurement operator.
-            regulariser (ProxSARAPos): The proximal operator.
-            im_min_itr (int, optional): The minimum number of inner loop iterations.
-                Defaults to 30.
-            im_max_itr (int, optional): The maximum number of inner loop iterations.
-                Defaults to 2000.
-            im_var_tol (float, optional): The tolerance for inner loop image variation.
-                Defaults to 1e-5.
-            heu_reg_scale (float, optional): The heuristic regularization scale. Defaults to 1.0.
-            im_max_itr_outer (int, optional): The maximum number of outer loop iterations.
-                Defaults to 20.
-            im_var_tol_outer (float, optional): The tolerance for outer loop image variation.
-                Defaults to 1e-4.
-            save_pth (str, optional): The path to save the results. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
-            reweight_save (bool, optional): Whether to save the reweighting results.
-            Defaults to True.
-            verbose (bool, optional): Whether to print verbose logs. Defaults to True.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for the local spectral
+                channels.
+            meas_op (MeasOpHyperspectral): Precise hyperspectral measurement
+                operator used for diagnostics and final products.
+            regulariser (ProxSARAPos): Positivity-constrained SARA proximal
+                operator.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+            meas_op_approx (MeasOpHyperspectral | None, optional): Optional
+                approximate measurement operator used during the iterative
+                forward step. Default: None.
+            im_min_itr (int, optional): Minimum number of inner-loop
+                iterations. Default: 30.
+            im_max_itr (int, optional): Maximum number of inner-loop
+                iterations per reweighting cycle. Default: 2000.
+            im_var_tol (float, optional): Inner-loop relative-variation
+                tolerance. Default: 1e-5.
+            heu_reg_scale (float, optional): Multiplicative scaling applied to
+                heuristic regularisation levels. Default: 1.0.
+            im_max_itr_outer (int, optional): Maximum number of reweighting
+                cycles. Default: 20.
+            im_var_tol_outer (float, optional): Outer-loop relative-variation
+                tolerance. Default: 1e-4.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            reweight_save (bool, optional): Save intermediate products after
+                each reweighting cycle. Default: True.
+            verbose (bool, optional): Enable informational logging.
+                Default: True.
+
+        Notes:
+            When ``meas_op_approx`` is provided, the approximate operator is
+            used in the iterative forward step while ``meas_op`` remains the
+            reference operator for dirty-image, PSF, and heuristic
+            calculations.
         """
         super().__init__(
             meas,
@@ -100,43 +171,41 @@ class FBSARA(ForwardBackward):
         self._im_rel_var_outer = 1.0
 
     def initialisation(self) -> None:
-        """
-        Initialises specific parameters of uSARA.
+        """Initialise uSARA-specific optimisation parameters.
 
-        This method initialises the step size and the uSARA proximity operator,
-        sets the heuristic regularization parameter and the noise floor level in
-        the wavelet domain. Some information will be printed if `verbose` is True.
+        This method sets the forward-backward step size, computes heuristic
+        regularisation levels, configures the wavelet noise floor and soft
+        thresholding value, and resets reweighting-loop state.
         """
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
             print("\nINFO: initialise uSARA optimiser...", flush=True)
 
-        # step size
+        # Set the forward-backward step size from the precise operator norm.
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
-        # heuristic noise level
+        # Estimate the heuristic regularisation levels for local channels.
         self._calculate_channel_wise_heuristic()
 
-        # set noise floor level in wavelet domain
-        # The noise floor level is not affected by the heuristic scaling factor
-        # divided by 3.0 -> 9 wavelet bases
+        # The factor 1/3 maps the image-domain heuristic to one wavelet basis
+        # out of the 9 bases used by the SARA dictionary.
         wl_noise_floor = self._heuristic / 3.0 / self._heu_noise_scale
         self._regulariser.set_noise_floor_level(wl_noise_floor)
-        # set soft thresholding value
+        # Use the scaled heuristic directly for the soft-threshold level.
         sfth_level = self._heuristic / 3.0
         self._regulariser.set_soft_thresholding_value(sfth_level)
 
-        # threshold used by spectral-index estimation in finalisation
+        # Cache the weakest channel heuristic for spectral-index masking.
         self._spec_idx_prec = self._heuristic.min()
         if self._is_distributed:
             dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
         self._spec_idx_prec = self._spec_idx_prec.item()
 
-        # initialise weighting for the l1 norm
+        # Initialise the reweighted l1 coefficients from the starting model.
         self._regulariser.update(self._model)
 
-        # other parameters
+        # Reset inner-loop and reweighting-loop state.
         self._model_prev_re = self._model
         self._iter_inner = 0
         self._iter_outer = 0
@@ -147,12 +216,14 @@ class FBSARA(ForwardBackward):
         if self._verbose:
             if self._rank == 0:
                 print(
-                    f"INFO: forward-backward step size (gamma): {self._gd_step_size:.4e}",
+                    f"INFO: forward-backward step size (gamma): "
+                    f"{self._gd_step_size:.4e}",
                     flush=True,
                 )
                 if self._use_approx_meas_op:
                     print(
-                        "INFO: use approximate measurement operator for reconstruction",
+                        "INFO: use approximate measurement operator "
+                        "for reconstruction",
                         flush=True,
                     )
             if self._is_distributed:
@@ -162,8 +233,10 @@ class FBSARA(ForwardBackward):
             if not isinstance(reg_param_list, list):
                 reg_param_list = [reg_param_list]
             print(
-                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"regularization parameter (lambda): [{', '.join(f'{val:.4e}' for val in reg_param_list)}]",
+                f"INFO: channel {self._rank_ch_start + 1} - "
+                f"{self._rank_ch_start + self._rank_ch_num}, "
+                f"regularization parameter (lambda): "
+                f"[{', '.join(f'{val:.4e}' for val in reg_param_list)}]",
                 flush=True,
             )
             if self._is_distributed:
@@ -172,8 +245,10 @@ class FBSARA(ForwardBackward):
             if not isinstance(sfth_level_list, list):
                 sfth_level_list = [sfth_level_list]
             print(
-                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"heuristic soft threolding level (gamma x lambda): [{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
+                f"INFO: channel {self._rank_ch_start + 1} - "
+                f"{self._rank_ch_start + self._rank_ch_num}, "
+                f"heuristic soft thresholding level (gamma x lambda): "
+                f"[{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
                 flush=True,
             )
             if self._is_distributed:
@@ -182,8 +257,10 @@ class FBSARA(ForwardBackward):
             if not isinstance(wl_noise_floor_list, list):
                 wl_noise_floor_list = [wl_noise_floor_list]
             print(
-                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                f"estimated noise floor level in wavelet coeeficients: [{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]",
+                f"INFO: channel {self._rank_ch_start + 1} - "
+                f"{self._rank_ch_start + self._rank_ch_num}, "
+                f"estimated noise floor level in wavelet coefficients: "
+                f"[{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]",
                 flush=True,
             )
             if self._is_distributed:
@@ -196,11 +273,7 @@ class FBSARA(ForwardBackward):
             dist.barrier()
 
     def _each_iter_begin(self) -> None:
-        """
-        Method to be executed at the beginning of each iteration.
-
-        This method resets the timer at the start of each reweighting loop.
-        """
+        """Run bookkeeping at the beginning of each iteration."""
         if self._iter_inner == 0 and self._rank == 0 and self._verbose:
             print(
                 "\n********************* Reweighting,",
@@ -212,44 +285,42 @@ class FBSARA(ForwardBackward):
 
     @torch.no_grad()
     def _stop_criteria(self) -> bool:
-        """
-        Checks the stop criteria for the algorithm.
+        """Evaluate the inner-loop and reweighting stopping criteria.
 
-        The imaging loop will be terminated if the stop criteria of both inner loop
-        and reweighting loop are met. The stop criteria are: 1) meets the minimum number
-        of iterations and 2) the relative variation is smaller than tolerance or the
-        maximum number of iterations is reached. The `_reweighting_flag` will be set if
-        the inner loop stop criteria is met.
+        The imaging loop terminates when the current reweighting cycle has
+        converged or reached its iteration budget and the outer reweighting
+        loop has also met its own stopping criterion.
 
         Returns:
-            bool: Whether the stop criteria is met.
+            bool: True if the global stopping criterion is met.
         """
-        # img relative variation
+        # Compute the inner-loop relative variation across all ranks.
         model_norm = torch.sum(self._model**2)
         model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
-        # gather norms from all ranks
         if self._is_distributed:
             dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
             dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
         self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
-        # log
         if self._verbose and self._rank == 0:
             print(
-                f"Cumulative itr: {self._iter+1},  re-weighting itr: {self._iter_outer+1},",
-                f"forward-backward itr: {self._iter_inner+1},",
+                f"Cumulative itr: {self._iter+1},  "
+                f"re-weighting itr: {self._iter_outer+1}, "
+                f"forward-backward itr: {self._iter_inner+1}, "
                 f"relative variation {self._im_rel_var:.3e}",
-                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
-                f"denoising step {self._t_backward:#.3g} sec,",
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec, "
+                f"denoising step {self._t_backward:#.3g} sec, "
                 f"iteration {self._t_iter:#.3g} sec.\n",
                 flush=True,
             )
 
-        # stop criteria
+        # Promote the current iteration to a reweighting update once the inner
+        # stopping criterion or the inner iteration budget is reached.
         if (
             self._iter_inner + 1 >= self._im_min_itr
             and self._im_rel_var < self._im_var_tol
         ) or self._iter_inner + 1 >= self._im_max_itr_inner:
+            # Inner loop has converged or reached its maximum iteration count
             self._t_iter_outer = timer() - self._t_iter_outer
             self._reweighting_flag = True
             model_diff_norm = torch.sum((self._model - self._model_prev_re) ** 2)
@@ -259,7 +330,6 @@ class FBSARA(ForwardBackward):
                 model_diff_norm / (model_norm + 1e-12)
             ).item()
             self._model_prev_re = self._model
-            # log
             if self._verbose and self._rank == 0:
                 print(
                     "************************** Major cycle",
@@ -267,12 +337,13 @@ class FBSARA(ForwardBackward):
                     flush=True,
                 )
                 print(
-                    f"INFO: Re-weighting iteration {self._iter_outer+1}",
+                    f"INFO: Re-weighting iteration {self._iter_outer+1} "
                     f"completed in {self._t_iter_outer:#.4g} sec.",
                     flush=True,
                 )
                 print(
-                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer:#.3g}",
+                    f"INFO: Image relative variation of the major cycle "
+                    f"{self._im_rel_var_outer:#.3g}",
                     flush=True,
                 )
 
@@ -280,33 +351,28 @@ class FBSARA(ForwardBackward):
                 self._im_rel_var_outer < self._im_var_tol_outer
                 or self._iter_outer + 1 >= self._im_max_itr_outer
             ):
+                # Outer loop has converged or reached its maximum iteration count
                 return True
 
         return False
 
     @torch.no_grad()
     def _each_iter_end(self) -> None:
-        """
-        Method to be executed at the end of each iteration.
-
-        This method saves intermediate results, and updates the SARA wavelet coeeficients
-        weights if the reweighting flag is set. The inner and outer iteration counters will
-        also be updated accordingly.
-        """
+        """Update reweighting state and save intermediate products."""
         if self._reweighting_flag:
-            # update l1 weighting
+            # Refresh the reweighted l1 coefficients from the current model.
             self._regulariser.update(self._model)
 
             if self._verbose:
                 residual_full_np = self.get_residual_image(dtype=torch.float32)
                 if self._rank == 0:
                     print(
-                        "INFO: The std of the residual dirty image",
+                        f"INFO: The std of the residual dirty image "
                         f"{np.std(residual_full_np).item():.3e}",
                         flush=True,
                     )
 
-            # save intermediate results
+            # Save model and residual snapshots after each major cycle.
             if self._reweight_save:
                 model_full_np = self.get_model_image(dtype=torch.float32)
                 residual_full_np = self.get_residual_image(dtype=torch.float32)
@@ -342,13 +408,7 @@ class FBSARA(ForwardBackward):
 
     @torch.no_grad()
     def finalisation(self) -> None:
-        """
-        Finalises the imaging process and saves the final images.
-
-        This method calculates the residual image, prints information about
-        the process if verbose mode is on, and saves the final model and
-        residual images in FITS format.
-        """
+        """Finalise uSARA outputs and save the reconstructed products."""
         if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)
@@ -359,7 +419,7 @@ class FBSARA(ForwardBackward):
                 flush=True,
             )
 
-        # save final images
+        # Save the final model and residual dirty image.
         model_full_np = self.get_model_image()
         residual_full_np = self.get_residual_image()
         if self._rank == 0:
@@ -376,7 +436,7 @@ class FBSARA(ForwardBackward):
                 overwrite=True,
             )
 
-            # generate spectral index map if applicable
+            # Generate a spectral-index map only for multi-channel outputs.
             if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,

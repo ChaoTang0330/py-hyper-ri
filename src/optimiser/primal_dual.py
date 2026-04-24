@@ -1,13 +1,16 @@
-"""
-Primal-dual algorithm
+"""Define the shared primal-dual optimiser implementation.
+
+This module provides a primal-dual backbone with a preconditioned dual update
+for data fidelity and a proximal primal update for regularisation.
 """
 
 import os
 from timeit import default_timer as timer
+from typing import List
 
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
 from .optimiser import Optimiser
@@ -16,18 +19,53 @@ from ..measurement_operator import MeasOpHyperspectral
 
 
 class PrimalDualPrecond(Optimiser):
-    """
-    Primal-dual algorithm with preconditioned dual data update.
+    """Represent a preconditioned primal-dual optimisation backbone.
 
-    This implementation support solving objective function with two
-    non-differentiable terms. The data-fidelity term with pre-conditioning is
-    handeled in the dual update step. The regularization term is handeled in the
-    primal update step.
+    This class implements a primal-dual splitting scheme with two
+    non-differentiable terms. The preconditioned data-fidelity term is handled
+    through a dual update, while the regularisation term is handled through a
+    proximal update of the primal image variable.
+
+    Shape:
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
+            ``(1, 1, N_c)``.
+        Frequency tensor: ``(1, C_total, 1, 1)`` after reshaping in the base
+            optimiser.
+
+    Attributes:
+        _regulariser_prime (Regulariser): Proximal regulariser applied to the
+            primal image variable.
+        _regulariser_dual_data (ProxEllipsoid): Proximal operator applied to
+            the dual data variable.
+        _heu_noise_scale (float): User-defined multiplicative scaling applied
+            to heuristic noise levels.
+        _start_iter (int): Starting iteration index.
+        _im_max_itr (int): Maximum number of primal-dual iterations.
+        _pr_step_size (float): Primal step size.
+        _precond_weight (list[torch.Tensor]): Channel-wise preconditioning
+            weights applied in the adjoint dual update.
+        _dual (list[torch.Tensor]): Dual variables associated with the
+            visibility-domain data-fidelity term.
+        _iter (int): Current iteration index.
+        _t_total (float): Total optimisation time in seconds.
+        _t_iter (float): Last iteration time in seconds.
+        _t_primal (float): Last primal-step time in seconds.
+        _t_dual (float): Last dual-step time in seconds.
+        _cuda_timing (bool): Whether CUDA events are used for timing.
+        _psf_peak (torch.Tensor): Per-channel PSF peak values.
+        _heuristic (torch.Tensor | None): Cached heuristic noise levels.
+
+    References:
+        Condat, L. (2013). `A Primal-Dual Splitting Method for Convex
+        Optimization Involving Lipschitzian, Proximable and Linear Composite
+        Terms <https://link.springer.com/article/10.1007/s10957-012-0245-9>`_.
+        *J. Optim. Theory Appl., 158*, 460-479.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser_prime: Regulariser,
@@ -38,19 +76,32 @@ class PrimalDualPrecond(Optimiser):
         save_pth: str = "results",
         file_prefix: str = "",
     ) -> None:
-        """
-        Constructs all the necessary attributes for the PrimalDualPrecond object.
+        """Initialise the shared primal-dual optimiser state.
 
         Args:
-            meas (torch.Tensor): The measurement tensor.
-            ch_freq (torch.Tensor): The frequency of each channel.
-            meas_op (MeasOp): The measurement operator.
-            regulariser_prime (ProxOp): The proximal operator for the prime variable.
-            regulariser_dual_data (ProxOpElipse): The proximal operator for the dual data.
-            rank_ch_start (int, optional): The starting channel for the rank. Defaults to 0.
-            im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
-            save_pth (str, optional): The path to save the results. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for all spectral channels.
+            meas_op (MeasOpHyperspectral): Hyperspectral measurement operator.
+            regulariser_prime (Regulariser): Proximal regulariser applied to
+                the primal image variable.
+            regulariser_dual_data (ProxEllipsoid): Proximal operator applied
+                to the dual data variable.
+            heu_noise_scale (float, optional): User-specified multiplicative
+                factor applied to heuristic noise estimates. Default: 1.0.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+            im_max_itr (int, optional): Maximum number of iterations.
+                Default: 2000.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+
+        Notes:
+            This constructor computes and stores the dirty image and PSF before
+            the main optimisation loop starts, then writes them to FITS files
+            on rank 0.
         """
         super().__init__(
             meas,
@@ -66,25 +117,25 @@ class PrimalDualPrecond(Optimiser):
         self._start_iter = 0
         self._im_max_itr = im_max_itr
         self._pr_step_size = 1.0
+        # Store one preconditioning weight per local visibility channel.
         self._precond_weight = [
             torch.ones(1, 1, device=meas_op.get_device())
             for _ in range(self._rank_ch_num)
         ]
+        # Allocate the dual variables with the same layout as the measurements.
         self._dual = [torch.zeros_like(m) for m in self._meas]
 
-        # timing
+        # Cache wall-clock timing statistics for logging and diagnostics.
         self._iter = 1
         self._t_total = 0.0
         self._t_iter = 0.0
         self._t_primal = 0.0
         self._t_dual = 0.0
 
-        # cuda event
-        self._cuda_timing = False
-        if self._meas_op.get_device() == torch.device("cuda"):
-            self._cuda_timing = True
+        # Enable CUDA-event timing only when the measurement operator runs on CUDA.
+        self._cuda_timing = self._meas_op.get_device() == torch.device("cuda")
 
-        # save dirty image and psf
+        # Precompute dirty image and PSF products used by concrete subclasses.
         self._meas_bp = self._meas_op.adjoint_op(self._meas)
         self._psf = self._meas_op.get_psf()
         self._psf_peak = self._psf.amax(dim=(2, 3), keepdim=True)
@@ -103,16 +154,17 @@ class PrimalDualPrecond(Optimiser):
                 overwrite=True,
             )
 
-        # heuristic noise level
+        # Allocate the heuristic-noise cache lazily.
         self._heuristic = None
 
     @torch.no_grad()
     def run(self) -> None:
-        """
-        Runs the main loop of primal-dual algorithm.
+        """Run the primal-dual optimisation loop.
 
-        This method iteratively updates the prime and dual variables until the
-        stop criteria is met or the maximum number of iterations is reached.
+        This method alternates a primal proximal update in the image domain
+        with a dual proximal update in the visibility domain until the
+        subclass-defined stopping criterion is met or the maximum iteration
+        count is reached.
         """
         if self._cuda_timing:
             primal_start_event = torch.cuda.Event(enable_timing=True)
@@ -126,7 +178,7 @@ class PrimalDualPrecond(Optimiser):
             self._t_iter = timer()
             self._each_iter_begin()
 
-            # primal step
+            # Primal step: apply the adjoint dual correction then the primal prox.
             if self._cuda_timing:
                 primal_start_event.record()
             else:
@@ -137,6 +189,7 @@ class PrimalDualPrecond(Optimiser):
                     for i in range(self._rank_ch_num)
                 ]
             )
+            # Move the primal variable to the regulariser device for the prox.
             self._model = self._model.to(
                 device=self._regulariser_prime.get_device(),
                 dtype=self._regulariser_prime.get_data_type(),
@@ -149,7 +202,7 @@ class PrimalDualPrecond(Optimiser):
             else:
                 self._t_primal = timer() - self._t_primal
 
-            # dual step
+            # Dual step: extrapolate the primal variable and project the dual state.
             if self._cuda_timing:
                 dual_start_event.record()
             else:
@@ -157,10 +210,12 @@ class PrimalDualPrecond(Optimiser):
             self._model = self._model.to(device=self._meas_op.get_device()).to(
                 dtype=self._meas_op.get_data_type()
             )
+            # Use the standard extrapolated primal point in the forward model.
             dual_update = self._meas_op.forward_op(2 * self._model - self._model_prev)
             self._dual = [
                 self._dual[i] + dual_update[i] for i in range(self._rank_ch_num)
             ]
+            # Apply the dual prox by subtracting the projection result.
             dual_proj = self._regulariser_dual_data(self._dual)
             self._dual = [
                 self._dual[i] - dual_proj[i] for i in range(self._rank_ch_num)
@@ -184,17 +239,33 @@ class PrimalDualPrecond(Optimiser):
 
     @torch.no_grad()
     def _calculate_channel_wise_heuristic(self) -> None:
+        """Calculate channel-wise heuristic noise levels.
+
+        The base heuristic is defined as
+
+        .. math::
+            h_c = \frac{1}{\sqrt{2 L_c}},
+
+        where :math:`L_c = \|\Phi_c^\dagger \Phi_c\|_S` is the channel-wise
+        operator norm returned by ``self._meas_op.get_op_norm_ch()``. The
+        heuristic is then optionally corrected with
+        ``self._meas_op.get_op_norm_prime_ch()`` and scaled by the
+        user-provided factor ``self._heu_noise_scale``.
+
+        The result is stored in ``self._heuristic`` with shape
+        ``(1, C_rank, 1, 1)``.
+
+        References:
+            Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+            reconstruction algorithms in radio interferometry: From handcrafted to
+            learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+            *MNRAS, 518*(1), 604-622.
+
+            Wilber, A. G., Dabbech, A., Jackson, A., & Wiaux, Y. (2023). `Scalable
+            precision wide-field imaging in radio interferometry: I. uSARA
+            validated on ASKAP data <https://doi.org/10.1093/mnras/stad1351>`_.
+            *MNRAS, 522*(4), 5558-5575.
         """
-        Calculates the heuristic noise level for each channel.
-
-        This method computes the heuristic noise level based on the measurement operator
-        and the measurements. It also applies any correction or scaling factors to the
-        heuristic noise level if imaging weight and/or scaling factor are specified.
-
-        The result heuristic noise level is saved in the attribute `_heuristic`, which
-        is a tensor of shape (1, C, 1, 1).
-        """
-
         self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op.get_op_norm_ch())
         if self._verbose:
             if self._is_distributed:
@@ -206,9 +277,11 @@ class PrimalDualPrecond(Optimiser):
             if not isinstance(heuristic_list, list):
                 heuristic_list = [heuristic_list]
             print(
-                f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
+                f"INFO: channel {self._rank_ch_start + 1} - "
+                f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"op norm [{', '.join(f'{val:.4e}' for val in op_norm_ch_list)}], "
-                f"heuristic noise level [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                f"heuristic noise level "
+                f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                 flush=True,
             )
 
@@ -234,9 +307,12 @@ class PrimalDualPrecond(Optimiser):
                 if not isinstance(heu_corr_factor_list, list):
                     heu_corr_factor_list = [heu_corr_factor_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after correction: [{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
-                    f"correction factor [{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"heuristic noise level after correction: "
+                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
+                    f"correction factor "
+                    f"[{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
                     flush=True,
                 )
         if not np.isclose(self._heu_noise_scale, 1.0):
@@ -246,7 +322,8 @@ class PrimalDualPrecond(Optimiser):
                     dist.barrier()
                 if self._rank == 0:
                     print(
-                        f"INFO: apply user specified heuristic noise scale {self._heu_noise_scale}",
+                        f"INFO: apply user specified heuristic "
+                        f"noise scale {self._heu_noise_scale}",
                         flush=True,
                     )
                 if self._is_distributed:
@@ -255,7 +332,9 @@ class PrimalDualPrecond(Optimiser):
                 if not isinstance(heuristic_list, list):
                     heuristic_list = [heuristic_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"heuristic noise level after scaling: [{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"heuristic noise level after scaling: "
+                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
                     flush=True,
                 )

@@ -1,9 +1,13 @@
-"""
-HyperAIRI, built on forward-backward algorithm
+"""Define the hyperspectral AIRI optimiser.
+
+This module provides the HyperAIRI optimiser built on the shared
+forward-backward backbone with adaptive denoiser selection and spectral-index
+updates.
 """
 
 import os
-from typing import Union, Optional
+from typing import List, Optional, Union
+
 import torch
 import torch.distributed as dist
 import numpy as np
@@ -16,16 +20,81 @@ from ..interface import fit_clean_beam, get_spec_idx
 
 
 class FBHyperAIRI(ForwardBackward):
-    """
-    FBHyperAIRI implements the HyperAIRI algorithm based on Forward-Backward.
+    """Represent the HyperAIRI forward-backward optimiser.
 
-    It handles data fidelity in the forward step and uses AIRI denoisers
-    in the backward step for regularization.
+    This class combines the shared forward-backward optimisation loop with a
+    hyperspectral AIRI denoiser. Besides the image update, it can adapt the
+    denoiser selection from channel-wise peak estimates and refine an internal
+    spectral-index map used by the HyperAIRI regulariser.
+
+    Shape:
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
+            ``(1, 1, N_c)``.
+        Frequency tensor: ``(1, C_total, 1, 1)`` after reshaping in the base
+            optimiser.
+        Spectral-index tensor: ``(1, 1, H, W)``.
+
+    Attributes:
+        _im_min_itr (int): Minimum number of iterations before convergence is
+            checked.
+        _im_var_tol (float): Relative-variation tolerance for the image model.
+        _im_peak_est (torch.Tensor | None): User-provided channel-wise image
+            peak estimates, if any.
+        _adapt_net_select (bool): Whether HyperAIRI denoiser selection is
+            adapted during optimisation.
+        _peak_tol_min (float): Minimum allowed relative peak-variation
+            threshold.
+        _peak_tol (float): Current relative peak-variation threshold.
+        _peak_tol_step (float): Multiplicative decay factor applied to the
+            peak-variation threshold.
+        _peak_val_range (list): Current valid peak-value range returned by the
+            denoiser selector.
+        _spec_idx_init (torch.Tensor | str): Initial spectral-index map or its
+            initialisation mode.
+        _spec_update (bool): Whether spectral-index updates remain enabled.
+        _spec_max_update_count (int): Maximum number of spectral-index updates.
+        _spec_max_update_interval (int): Maximum iteration gap between
+            spectral-index updates.
+        _spec_update_tol (float): Current relative-variation threshold used to
+            trigger a spectral-index update.
+        _spec_update_tol_min (float): Lower bound for the spectral-index
+            update threshold.
+        _spec_update_tol_step (float): Multiplicative decay factor for the
+            spectral-index update threshold.
+        _spec_update_count (int): Number of spectral-index updates already
+            applied.
+        _spec_update_iter (int): Iteration count since the last
+            spectral-index update.
+        _clean_beam (torch.Tensor | None): Clean-beam kernel used for
+            spectral-index estimation.
+        _verbose (bool): Whether informational logs are printed.
+        _iter_save (int): Interval between intermediate FITS snapshots.
+        _prev_peak_val (torch.Tensor | None): Previous channel-wise image peak
+            estimate.
+        _im_rel_var (float): Current relative image variation.
+
+    Example:
+        >>> optimiser = FBHyperAIRI(
+        ...     meas=meas,
+        ...     ch_freq=ch_freq,
+        ...     meas_op=meas_op,
+        ...     regulariser=regulariser,
+        ... )
+        >>> optimiser.initialisation()
+        >>> optimiser.run()
+        >>> optimiser.finalisation()
+
+    References:
+        Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026). `HyperAIRI: A
+        Plug-and-play Algorithm for Precise Hyperspectral Image Reconstruction
+        in Radio Interferometry <https://doi.org/10.3847/1538-4365/ae3149>`_.
+        *The Astrophysical Journal Supplement Series, 283*(1), 9.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenHyperAIRI,
@@ -52,37 +121,68 @@ class FBHyperAIRI(ForwardBackward):
         file_prefix: str = "",
         iter_save: int = 1000,
     ) -> None:
-        """
-        Initializes the AIRI optimiser, which is built on forward-backward algorithm.
+        """Initialise the HyperAIRI optimiser.
 
         Args:
-            meas (torch.Tensor): The measurement tensor.
-            meas_op (MeasOpHyperspectral): The measurement operator.
-            regulariser (DenHyperAIRI): The denoising operator.
-            im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
-            im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
-            im_var_tol (float, optional): The tolerance for image variation. Defaults to 1e-4.
-            im_peak_est (Union[torch.Tensor, None], optional): The estimated peak of the image. Defaults to None.
-            heu_noise_scale (float, optional): The heuristic noise scale. Defaults to 1.0.
-            adapt_net_select (bool, optional): Whether to adapt network selection. Defaults to True.
-            peak_tol_min (float, optional): The minimum tolerance for peak. Defaults to 1e-3.
-            peak_tol_max (float, optional): The maximum tolerance for peak. Defaults to 0.1.
-            peak_tol_step (float, optional): The step size for peak tolerance. Defaults to 0.1.
-            spec_update (bool, optional): Whether to update spectral index map. Defaults to True.
-            spec_idx_init (Union[torch.Tensor, str], optional): The initialization method for spectral index map.
-                It can be 'zero', 'dirty', or a tensor. Defaults to 'zero'.
-            spec_max_update_count (int, optional): The maximum number of spectral index map updates.
-                Defaults to 50.
-            spec_max_update_interval (int, optional): The maximum interval between spectral index map updates.
-                Defaults to 60.
-            spec_update_tol_max (float, optional): The maximum tolerance for spectral index map update. Defaults to 8e-3.
-            spec_update_tol_min (float, optional): The minimum tolerance for spectral index map update. Defaults to 1e-5.
-            spec_update_tol_step (float, optional): The step size for spectral index map update tolerance. Defaults to 0.5.
-            verbose (bool, optional): Whether to print verbose logs. Defaults to True.
-            save_pth (str, optional): The path where results will be saved. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
-            iter_save (int, optional): The number of iterations after which to save results.
-                Defaults to 1000.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for all spectral channels.
+            meas_op (MeasOpHyperspectral): Precise hyperspectral measurement
+                operator used for diagnostics and final products.
+            regulariser (DenHyperAIRI): HyperAIRI denoising regulariser.
+            meas_op_approx (MeasOpHyperspectral | None, optional): Optional
+                approximate measurement operator used during the iterative
+                forward step. Default: None.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+            im_min_itr (int, optional): Minimum number of iterations before
+                convergence is checked. Default: 100.
+            im_max_itr (int, optional): Maximum number of iterations.
+                Default: 2000.
+            im_var_tol (float, optional): Relative-variation tolerance.
+                Default: 1e-4.
+            im_peak_est (torch.Tensor | None, optional): User-provided
+                channel-wise image peak estimates. Default: None.
+            heu_noise_scale (float, optional): Multiplicative scaling applied
+                to heuristic noise levels. Default: 1.0.
+            adapt_net_select (bool, optional): Adapt HyperAIRI denoiser
+                selection during optimisation. Default: True.
+            peak_tol_min (float, optional): Minimum allowed relative
+                peak-variation threshold. Default: 1e-3.
+            peak_tol_max (float, optional): Initial relative peak-variation
+                threshold. Default: 0.1.
+            peak_tol_step (float, optional): Multiplicative decay factor for
+                the peak-variation threshold. Default: 0.1.
+            spec_update (bool, optional): Enable spectral-index updates during
+                optimisation. Default: True.
+            spec_idx_init (torch.Tensor | str, optional): Initial
+                spectral-index map or initialisation mode. Supported string
+                values are ``"zero"`` and ``"dirty"``. Default: ``"dirty"``.
+            spec_max_update_count (int, optional): Maximum number of
+                spectral-index updates. Default: 50.
+            spec_max_update_interval (int, optional): Maximum number of
+                iterations between spectral-index updates. Default: 60.
+            spec_update_tol_max (float, optional): Initial relative-variation
+                threshold used to trigger a spectral-index update.
+                Default: 1.6e-3.
+            spec_update_tol_min (float, optional): Lower bound for the
+                spectral-index update threshold. Default: 1e-5.
+            spec_update_tol_step (float, optional): Multiplicative decay
+                factor for the spectral-index update threshold. Default: 0.5.
+            verbose (bool, optional): Enable informational logging.
+                Default: True.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            iter_save (int, optional): Save interval for intermediate FITS
+                products. Default: 1000.
+
+        Notes:
+            When ``meas_op_approx`` is provided, the approximate operator is
+            used in the iterative forward step while ``meas_op`` remains the
+            reference operator for dirty-image, PSF, clean-beam, and heuristic
+            calculations.
         """
         super().__init__(
             meas,
@@ -105,14 +205,14 @@ class FBHyperAIRI(ForwardBackward):
                 device=self._meas_op.get_device(), dtype=self._meas_op.get_data_type()
             ).view(1, -1, 1, 1)
 
-        # network adaptation parameters
+        # Configure denoiser-selection adaptation.
         self._adapt_net_select = adapt_net_select
         self._peak_tol_min = peak_tol_min
         self._peak_tol = peak_tol_max
         self._peak_tol_step = peak_tol_step
         self._peak_val_range = []
 
-        # spectral index map update parameters
+        # Configure spectral-index-map updates.
         self._spec_idx_init = spec_idx_init
         self._spec_update = spec_update
         self._spec_max_update_count = spec_max_update_count
@@ -132,41 +232,40 @@ class FBHyperAIRI(ForwardBackward):
 
     @torch.no_grad()
     def initialisation(self) -> None:
-        """
-        Initialises specific parameters of AIRI.
+        """Initialise HyperAIRI-specific optimisation parameters.
 
-        This method initialises the step size, estimates the peak value, sets the
-        heuristic noise level, initialises the AIRI proximal operator, and prints
-        some information if verbose is True.
+        This method sets the forward-backward step size, estimates channel-wise
+        image peaks, computes heuristic noise levels, fits the clean beam used
+        for spectral-index estimation, initialises the spectral-index map, and
+        configures the HyperAIRI denoiser selector.
         """
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
             print("\nINFO: initialise HyperAIRI optimiser...", flush=True)
 
-        # step size
+        # Set the forward-backward step size from the precise operator norm.
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
-        # estimate peak value
+        # Estimate channel-wise image peaks from the current dirty image.
         self._estimate_channel_wise_peak_val()
 
-        # heuristic noise level of each channel
+        # Estimate heuristic regularisation levels for local channels.
         self._calculate_channel_wise_heuristic()
 
-        # fit clean beam to the PSF of the last channel
-        # then broadcast the clean beam to all ranks
+        # Fit the clean beam on the last rank and broadcast it to all ranks.
         self._fit_and_broadcast_clean_beam()
 
-        # get the precision threshold for spectral index map fitting
+        # Use the smallest heuristic level as the log-fit precision threshold.
         self._spec_idx_prec = self._heuristic.min()
         if self._is_distributed:
             dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
         self._spec_idx_prec = self._spec_idx_prec.item()
 
-        # initialise spectral index map
+        # Initialise the spectral-index map before denoiser selection.
         self._initialise_spectral_index_map()
 
-        # initialise HyperAIRI prox
+        # Initialise the HyperAIRI denoiser and cache its supported peak range.
         if self._verbose:
             if self._is_distributed:
                 dist.barrier()
@@ -178,7 +277,6 @@ class FBHyperAIRI(ForwardBackward):
             spec_idx=self._spec_idx_map,
         )
 
-        # logging
         if self._verbose:
             if self._is_distributed:
                 dist.barrier()
@@ -192,9 +290,10 @@ class FBHyperAIRI(ForwardBackward):
                 print("*************************************************", flush=True)
 
     def _estimate_channel_wise_peak_val(self) -> None:
-        """
-        Estimates the peak value for each channel from the dirty image if the user does not
-        specify it.
+        """Estimate or set channel-wise image peak values.
+
+        When no user estimate is provided, this method uses the channel-wise
+        maxima of the normalised dirty image.
         """
         if self._im_peak_est is None:
             self._prev_peak_val = (
@@ -209,8 +308,10 @@ class FBHyperAIRI(ForwardBackward):
                 if not isinstance(peak_val_list, list):
                     peak_val_list = [peak_val_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"estimated image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"estimated image peak value "
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
         else:
@@ -227,20 +328,19 @@ class FBHyperAIRI(ForwardBackward):
                 if not isinstance(peak_val_list, list):
                     peak_val_list = [peak_val_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"specified image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"specified image peak value "
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
 
     def _fit_and_broadcast_clean_beam(self) -> None:
-        """
-        Fits the clean beam from the PSF of the last channel and broadcasts it to all ranks.
+        """Fit and broadcast the clean beam used in spectral-index updates.
 
-        This method is used when the spectral index map update is enabled, as the clean
-        beam is needed for the spectral index map fitting.
-
-        The result clean beam is saved in the attribute `_clean_beam`, which is a tensor
-        of shape (1, 1, H, W).
+        The clean beam is fitted from the PSF of the last global channel and
+        stored in ``self._clean_beam`` with shape ``(1, 1, H, W)``. The last
+        channel has the highest resolution.
         """
         if self._rank == self._world_size - 1:
             psf_ch_end = self._psf[0, -1, :, :].cpu().numpy()
@@ -275,11 +375,11 @@ class FBHyperAIRI(ForwardBackward):
             dist.broadcast(self._clean_beam, src=self._world_size - 1)
 
     def _initialise_spectral_index_map(self) -> None:
-        """
-        Initializes the spectral index map based on the specified method.
+        """Initialise the spectral-index map.
 
-        The spectral index map is saved in the attribute `_spec_idx_map`,
-        which is a tensor of shape (1, 1, H, W),
+        The map is stored in ``self._spec_idx_map`` with shape
+        ``(1, 1, H, W)``. It can be supplied directly, estimated from the
+        normalised dirty image, or initialised to zero.
         """
         if isinstance(self._spec_idx_init, torch.Tensor):
             self._spec_idx_map = self._spec_idx_init.to(
@@ -321,44 +421,39 @@ class FBHyperAIRI(ForwardBackward):
                 dtype=self._meas_op.get_data_type(),
             )
 
-    def _each_iter_begin(self):
-        """
-        Method to be executed at the beginning of each iteration.
+    def _each_iter_begin(self) -> None:
+        """Run logic at the beginning of each iteration.
 
-        This method is empty for AIRI.
+        No per-iteration pre-processing is required for HyperAIRI.
         """
 
     @torch.no_grad()
     def _stop_criteria(self) -> bool:
-        """
-        Checks the stop criteria for the algorithm.
-
-        This method calculates the image relative variation, logs some information if
-        `verbose` is True, and checks if the stop criteria for the algorithm are met.
+        """Evaluate the HyperAIRI stopping criterion.
 
         Returns:
-            bool: True if the stop criteria are met, False otherwise.
+            bool: ``True`` when the minimum iteration count has been reached
+            and the relative image variation falls below the stopping
+            tolerance, otherwise ``False``.
         """
-        # img relative variation
+        # Compute the relative variation of the image model.
         model_norm = torch.sum(self._model**2)
         model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
-        # gather norms from all ranks
+        # Gather the global norms across all ranks.
         if self._is_distributed:
             dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
             dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
         self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
-        # log
         if self._verbose and self._rank == 0:
             print(
-                f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e}",
-                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
-                f"denoising step {self._t_backward:#.3g} sec,"
+                f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e}"
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec, "
+                f"denoising step {self._t_backward:#.3g} sec, "
                 f"iteration {self._t_iter:#.3g} sec.",
                 flush=True,
             )
 
-        # stop criteria
         if self._iter + 1 >= self._im_min_itr and self._im_rel_var < self._im_var_tol:
             return True
 
@@ -366,13 +461,13 @@ class FBHyperAIRI(ForwardBackward):
 
     @torch.no_grad()
     def _each_iter_end(self) -> None:
-        """
-        Method to be executed at the end of each iteration.
+        """Run post-processing at the end of each iteration.
 
-        This method saves intermediate results, and updates the HyperAIRI denoiser selection
-        if `adapt_net_select` is True.
+        This method saves intermediate products, updates the HyperAIRI
+        denoiser selection when enabled, and refreshes the spectral-index map
+        according to the current relative-variation schedule.
         """
-        # save intermediate results
+        # Save intermediate model and residual products periodically.
         if (self._iter + 1) % self._iter_save == 0:
             model_full_np = self.get_model_image(dtype=torch.float32)
             residual_full_np = self.get_residual_image(dtype=torch.float32)
@@ -400,7 +495,7 @@ class FBHyperAIRI(ForwardBackward):
                     overwrite=True,
                 )
 
-        # HyperAIRI denoiser selection update
+        # Update denoiser selection from the current channel-wise peak values.
         if self._adapt_net_select:
             curr_peak_val = self._model.amax(dim=(2, 3), keepdim=True)
             peak_var = (
@@ -437,7 +532,7 @@ class FBHyperAIRI(ForwardBackward):
                     ch_peak_est=self._prev_peak_val,
                 )
 
-        # spectral index map update
+        # Update the spectral-index map once the image has stabilised enough.
         if self._spec_update:
             if (
                 self._im_rel_var < self._spec_update_tol
@@ -455,15 +550,15 @@ class FBHyperAIRI(ForwardBackward):
                 self._spec_update_iter += 1
 
             if self._spec_update_count >= self._spec_max_update_count:
-                self._spec_update = False  # stop further updates if interval exceeded
+                self._spec_update = False
 
     @torch.no_grad()
     def finalisation(self) -> None:
-        """
-        Finalises the FBAIRI optimiser.
+        """Finalise HyperAIRI and save the reconstructed products.
 
-        This method prints final log information if `verbose` is True, and saves
-        the result model and residual images.
+        This method prints final log information, saves the reconstructed model
+        and residual dirty images, and exports a spectral-index map estimated
+        from the final image cube.
         """
         if self._is_distributed:
             dist.barrier()
@@ -478,7 +573,7 @@ class FBHyperAIRI(ForwardBackward):
                 flush=True,
             )
 
-        # save final results
+        # Save the final model, residual, and spectral-index products.
         model_full_np = self.get_model_image()
         residual_full_np = self.get_residual_image()
         if self._rank == 0:
@@ -509,12 +604,15 @@ class FBHyperAIRI(ForwardBackward):
 
     @torch.no_grad()
     def _update_spec_idx_map(self) -> torch.Tensor:
-        """
-        Updates the spectral index map based on the current model image.
+        """Update the spectral-index map from the current model image.
+
+        The update is computed by fitting a log-log linear model across the
+        blurred channel images and frequencies on pixels with sufficient signal.
+
         Returns:
-            torch.Tensor: The updated spectral index map.
+            torch.Tensor: Updated spectral-index map with shape ``(1, 1, H, W)``.
         """
-        # convolve with clean beam
+        # Convolve each channel image with the clean beam before fitting.
         img_blur = self._model.view(self._rank_ch_num, 1, *self._model.shape[2:])
         img_blur = torch.nn.functional.conv2d(
             img_blur, self._clean_beam, padding="same"
@@ -522,7 +620,7 @@ class FBHyperAIRI(ForwardBackward):
         img_blur = img_blur.view(1, self._rank_ch_num, *self._model.shape[2:])
         img_blur = torch.clamp(img_blur, min=0.0)
 
-        # build valid mask
+        # Require enough valid channels for a stable spectral fit.
         img_blur_valid_count = torch.sum(
             (img_blur > self._spec_idx_prec).to(torch.float32), dim=1, keepdim=True
         )
@@ -530,19 +628,20 @@ class FBHyperAIRI(ForwardBackward):
             dist.all_reduce(img_blur_valid_count, op=dist.ReduceOp.SUM)
         img_blur_valid_mask = img_blur_valid_count > self._ch_freq.shape[1] * 0.5
 
-        # log frequency, x
+        # Build the log-frequency design variable.
         prec_mask = img_blur < self._spec_idx_prec
         log_ch_freq = torch.log(
-            self._ch_freq[:, self._rank_ch_start : self._rank_ch_start + self._rank_ch_num, :, :]
+            self._ch_freq[
+                :, self._rank_ch_start : self._rank_ch_start + self._rank_ch_num, :, :
+            ]
         )
         log_ch_freq = log_ch_freq.expand_as(img_blur)
         log_ch_freq = log_ch_freq.masked_fill(prec_mask, 0.0)
-        # log blurred image, y
+        # Build the log-intensity response variable.
         log_img_blur = torch.log(torch.clamp(img_blur, min=self._spec_idx_prec))
         log_img_blur = log_img_blur.masked_fill(prec_mask, 0.0)
 
-        # least squares fitting y = a * x + b
-        # a=\frac{n\sum_i x_i y_i - (\sum_i x_i)(\sum_i y_i)}{n\sum_i x_i^2-(\sum_i x_i)^2}
+        # Fit the spectral slope with closed-form least squares.
         sum_x = torch.sum(log_ch_freq, dim=1, keepdim=True)
         sum_y = torch.sum(log_img_blur, dim=1, keepdim=True)
         sum_xy = torch.sum(log_ch_freq * log_img_blur, dim=1, keepdim=True)
@@ -562,7 +661,7 @@ class FBHyperAIRI(ForwardBackward):
         )
         spec_idx_map = spec_idx_map.masked_fill(spec_idx_map > -1e-8, 0.0)
 
-        # post processing
+        # Post-process the fitted map and use it to stabilise weak pixels.
         img_blur_avg = torch.sum(img_blur, dim=1, keepdim=True)
         if self._is_distributed:
             dist.all_reduce(img_blur_avg, op=dist.ReduceOp.SUM)

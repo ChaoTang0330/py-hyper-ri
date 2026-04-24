@@ -1,31 +1,80 @@
-"""
-Unconstrained AIRI, built on forward-backward algorithm
+"""Define the unconstrained AIRI optimiser.
+
+This module provides the AIRI optimiser built on the shared forward-backward
+backbone with adaptive denoiser selection.
 """
 
 import os
-from typing import Optional
+from typing import List, Optional
 
 import torch
 import torch.distributed as dist
 from astropy.io import fits
 
-from .forward_backward import ForwardBackward
-from ..regulariser import DenAIRI
-from ..measurement_operator import MeasOpHyperspectral
 from ..interface import get_spec_idx
+from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import DenAIRI
+from .forward_backward import ForwardBackward
 
 
 class FBAIRI(ForwardBackward):
-    """
-    FBAIRI implements the AIRI algorithm based on Forward-Backward.
+    """Represent the AIRI forward-backward optimiser.
 
-    It handles data fidelity in the forward step and uses AIRI denoisers
-    in the backward step for regularization.
+    This class combines the shared forward-backward optimisation loop with a
+    denoising AIRI prior. It optionally uses an approximate measurement
+    operator during the iterative forward step and can adapt the denoiser
+    selection from channel-wise peak estimates as the reconstruction evolves.
+
+    Shape:
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
+            ``(1, 1, N_c)``.
+        Frequency tensor: ``(1, C_rank, 1, 1)`` after reshaping in the base
+            optimiser.
+
+    Attributes:
+        _use_approx_meas_op (bool): Whether an approximate measurement operator
+            is used in the iterative forward step.
+        _im_min_itr (int): Minimum number of iterations before convergence is
+            checked.
+        _im_var_tol (float): Relative-variation tolerance for the image model.
+        _im_peak_est (float | None): User-provided image-peak estimate, if any.
+        _adapt_net_select (bool): Whether AIRI denoiser selection is adapted
+            during optimisation.
+        _peak_tol_min (float): Minimum allowed relative peak-variation
+            threshold.
+        _peak_tol (float): Current relative peak-variation threshold.
+        _peak_tol_step (float): Multiplicative decay factor applied to the
+            peak-variation threshold.
+        _peak_val_range (list): Current valid peak-value range returned by the
+            denoiser selector.
+        _verbose (bool): Whether informational logs are printed.
+        _iter_save (int): Interval between intermediate FITS snapshots.
+        _prev_peak_val (torch.Tensor | float | None): Previous channel-wise
+            image peak estimate.
+        _im_rel_var (float): Current relative image variation.
+
+    Example:
+        >>> optimiser = FBAIRI(
+        ...     meas=meas,
+        ...     ch_freq=ch_freq,
+        ...     meas_op=meas_op,
+        ...     regulariser=regulariser,
+        ... )
+        >>> optimiser.initialisation()
+        >>> optimiser.run()
+        >>> optimiser.finalisation()
+
+    References:
+        Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
+        reconstruction algorithms in radio interferometry: From handcrafted to
+        learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
+        *MNRAS, 518*(1), 604-622.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenAIRI,
@@ -45,30 +94,53 @@ class FBAIRI(ForwardBackward):
         file_prefix: str = "",
         iter_save: int = 1000,
     ) -> None:
-        """
-        Initializes the AIRI optimiser, which is built on forward-backward algorithm.
+        """Initialise the AIRI optimiser.
 
         Args:
-            meas (torch.Tensor): The measurement tensor.
-            meas_op (MeasOpHyperspectral): The measurement operator.
-            regulariser (DenAIRI): The denoising operator.
-            meas_op_approx (Union[MeasOpHyperspectral, None], optional): The approximate measurement
-                operator build on oversampled PSF. The AIRI algorithm will use this operator
-                for reconstruction if it is not None. Defaults to None.
-            im_min_itr (int, optional): The minimum number of iterations. Defaults to 100.
-            im_max_itr (int, optional): The maximum number of iterations. Defaults to 2000.
-            im_var_tol (float, optional): The tolerance for image variation. Defaults to 1e-4.
-            im_peak_est (float, optional): The estimated peak of the image. Defaults to None.
-            heu_noise_scale (float, optional): The heuristic noise scale. Defaults to 1.0.
-            adapt_net_select (bool, optional): Whether to adapt network selection. Defaults to True.
-            peak_tol_min (float, optional): The minimum tolerance for peak. Defaults to 1e-3.
-            peak_tol_max (float, optional): The maximum tolerance for peak. Defaults to 0.1.
-            peak_tol_step (float, optional): The step size for peak tolerance. Defaults to 0.1.
-            verbose (bool, optional): Whether to print verbose logs. Defaults to True.
-            save_pth (str, optional): The path where results will be saved. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
-            iter_save (int, optional): The number of iterations after which to save results.
-                Defaults to 1000.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for the local spectral
+                channels.
+            meas_op (MeasOpHyperspectral): Precise hyperspectral measurement
+                operator used for diagnostics and final products.
+            regulariser (DenAIRI): AIRI denoising regulariser.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+            meas_op_approx (MeasOpHyperspectral | None, optional): Optional
+                approximate measurement operator used during the iterative
+                forward step. Default: None.
+            im_min_itr (int, optional): Minimum number of iterations before
+                convergence is checked. Default: 100.
+            im_max_itr (int, optional): Maximum number of iterations.
+                Default: 2000.
+            im_var_tol (float, optional): Relative-variation tolerance.
+                Default: 1e-4.
+            im_peak_est (float | None, optional): User-provided image peak
+                estimate. Default: None.
+            heu_noise_scale (float, optional): Multiplicative scaling applied
+                to heuristic noise levels. Default: 1.0.
+            adapt_net_select (bool, optional): Adapt AIRI denoiser selection
+                during optimisation. Default: True.
+            peak_tol_min (float, optional): Minimum allowed relative
+                peak-variation threshold. Default: 1e-3.
+            peak_tol_max (float, optional): Initial relative peak-variation
+                threshold. Default: 0.1.
+            peak_tol_step (float, optional): Multiplicative decay factor for
+                the peak-variation threshold. Default: 0.1.
+            verbose (bool, optional): Enable informational logging.
+                Default: True.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            iter_save (int, optional): Save interval for intermediate FITS
+                products. Default: 1000.
+
+        Notes:
+            When ``meas_op_approx`` is provided, the approximate operator is
+            used in the iterative forward step while ``meas_op`` remains the
+            reference operator for dirty-image, PSF, peak estimation, and
+            heuristic calculations.
         """
         super().__init__(
             meas,
@@ -99,28 +171,28 @@ class FBAIRI(ForwardBackward):
         self._im_rel_var = 1.0
 
     def initialisation(self) -> None:
-        """
-        Initialises specific parameters of AIRI.
+        """Initialise AIRI-specific optimisation parameters.
 
-        This method initialises the step size, estimates the peak value, sets the
-        heuristic noise level, initialises the AIRI proximal operator, and prints
-        some information if verbose is True.
+        This method sets the forward-backward step size, estimates channel-wise
+        image peaks, computes heuristic noise levels, initialises the AIRI
+        denoiser selector, and prints configuration information when verbose
+        logging is enabled.
         """
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
             print("\nINFO: initialise AIRI optimiser...", flush=True)
 
-        # step size
+        # Set the forward-backward step size from the precise operator norm.
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
-        # estimate peak value
+        # Estimate channel-wise image peaks from the current dirty image.
         self._estimate_channel_wise_peak_val()
 
-        # heuristic noise level
+        # Estimate heuristic regularisation levels for local channels.
         self._calculate_channel_wise_heuristic()
 
-        # initialise AIRI prox
+        # Initialise the AIRI denoiser and cache its supported peak range.
         self._peak_val_range = self._regulariser.update(
             self._heuristic, self._prev_peak_val
         )
@@ -128,7 +200,10 @@ class FBAIRI(ForwardBackward):
         if self._is_distributed:
             dist.barrier()
         if self._verbose and self._rank == 0:
-            print(f"INFO: forward-backward step size: {self._gd_step_size}", flush=True)
+            print(
+                f"INFO: forward-backward step size: {self._gd_step_size:.4e}",
+                flush=True,
+            )
             if self._use_approx_meas_op:
                 print(
                     "INFO: use approximate measurement operator for reconstruction",
@@ -141,12 +216,11 @@ class FBAIRI(ForwardBackward):
             dist.barrier()
 
     def _estimate_channel_wise_peak_val(self) -> None:
-        """
-        Estimates the peak value for each channel from the dirty image if the user does not
-        specify it.
+        """Estimate or set channel-wise image peak values.
 
-        The estimated peak value is saved in the attribute `_prev_peak_val`, which is a tensor
-        of shape (1, C, 1, 1).
+        If ``self._im_peak_est`` is not provided, this method estimates peak
+        values from the dirty image normalized by the PSF peak. The result is
+        stored in ``self._prev_peak_val`` with shape ``(1, C_rank, 1, 1)``.
         """
         if self._im_peak_est is None:
             self._prev_peak_val = (
@@ -163,7 +237,8 @@ class FBAIRI(ForwardBackward):
                 print(
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
-                    f"estimated image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"estimated image peak value "
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
         else:
@@ -180,49 +255,48 @@ class FBAIRI(ForwardBackward):
                 if not isinstance(peak_val_list, list):
                     peak_val_list = [peak_val_list]
                 print(
-                    f"INFO: channel {self._rank_ch_start + 1} - {self._rank_ch_start + self._rank_ch_num}, "
-                    f"specified image peak value [{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"INFO: channel {self._rank_ch_start + 1} - "
+                    f"{self._rank_ch_start + self._rank_ch_num}, "
+                    f"specified image peak value "
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
                     flush=True,
                 )
 
-    def _each_iter_begin(self):
-        """
-        Method to be executed at the beginning of each iteration.
-
-        This method is empty for AIRI.
-        """
+    def _each_iter_begin(self) -> None:
+        """Run bookkeeping at the beginning of each iteration."""
 
     @torch.no_grad()
     def _stop_criteria(self) -> bool:
-        """
-        Checks the stop criteria for the algorithm.
+        """Evaluate the AIRI stopping criterion.
 
-        This method calculates the image relative variation, logs some information if
-        `verbose` is True, and checks if the stop criteria for the algorithm are met.
+        This method computes the relative image variation across all ranks,
+        reports iteration statistics when verbose logging is enabled, and
+        terminates once the minimum iteration count has been reached and the
+        relative variation falls below the tolerance.
 
         Returns:
-            bool: True if the stop criteria are met, False otherwise.
+            bool: True if the stopping criterion is met.
         """
-        # img relative variation
+        # Compute the relative image variation across all ranks.
         model_norm = torch.sum(self._model**2)
         model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
-        # gather norms from all ranks
         if self._is_distributed:
             dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
             dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
         self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
-        # log
         if self._verbose and self._rank == 0:
             print(
-                f"\nIter {self._iter+1}: relative variation {self._im_rel_var:.3e}",
-                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
-                f"denoising step {self._t_backward:#.3g} sec,"
+                f"\nIter {self._iter+1}: " 
+                f"relative variation {self._im_rel_var:.3e}"
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec, "
+                f"denoising step {self._t_backward:#.3g} sec, "
                 f"iteration {self._t_iter:#.3g} sec.",
                 flush=True,
             )
 
-        # stop criteria
+        # Stop once the minimum iteration count is reached and convergence
+        # falls below the prescribed tolerance.
         if self._iter + 1 >= self._im_min_itr and self._im_rel_var < self._im_var_tol:
             return True
 
@@ -230,13 +304,8 @@ class FBAIRI(ForwardBackward):
 
     @torch.no_grad()
     def _each_iter_end(self) -> None:
-        """
-        Method to be executed at the end of each iteration.
-
-        This method saves intermediate results, and updates the AIRI denoiser selection
-        if `adapt_net_select` is True.
-        """
-        # save intermediate results
+        """Save intermediate results and update AIRI denoiser selection."""
+        # Save model and residual snapshots at the requested interval.
         if (self._iter + 1) % self._iter_save == 0:
             model_full_np = self.get_model_image(dtype=torch.float32)
             residual_full_np = self.get_residual_image(dtype=torch.float32)
@@ -264,7 +333,8 @@ class FBAIRI(ForwardBackward):
                     overwrite=True,
                 )
 
-        # AIRI denoiser selection
+        # Update the AIRI denoiser if the peak estimate has moved enough and
+        # leaves the current supported range.
         if self._adapt_net_select:
             curr_peak_val = self._model.amax(dim=(2, 3), keepdim=True)
             peak_var = (
@@ -303,12 +373,7 @@ class FBAIRI(ForwardBackward):
 
     @torch.no_grad()
     def finalisation(self) -> None:
-        """
-        Finalises the FBAIRI optimiser.
-
-        This method prints final log information if `verbose` is True, and saves
-        the result model and residual images.
-        """
+        """Finalise AIRI outputs and save the reconstructed products."""
         if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
             print("********** END OF ALGORITHM **********", flush=True)
@@ -319,7 +384,7 @@ class FBAIRI(ForwardBackward):
                 flush=True,
             )
 
-        # save final results
+        # Save the final model and residual dirty image.
         model_full_np = self.get_model_image()
         residual_full_np = self.get_residual_image()
         if self._rank == 0:
@@ -336,7 +401,7 @@ class FBAIRI(ForwardBackward):
                 overwrite=True,
             )
 
-            # generate spectral index map if applicable
+            # Generate a spectral-index map only for multi-channel outputs.
             if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,

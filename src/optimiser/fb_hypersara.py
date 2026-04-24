@@ -1,9 +1,12 @@
-"""
-uSARA algorithm, built on forward-backward algorithm
+"""Define the Hyper-uSARA optimiser.
+
+This module provides the Hyper-uSARA optimiser built on the shared
+forward-backward backbone with positivity and reweighted sparse analysis
+regularisation.
 """
 
 import os
-from typing import Optional
+from typing import List, Optional
 from timeit import default_timer as timer
 
 import torch
@@ -18,16 +21,69 @@ from ..interface.spectral_index import get_spec_idx
 
 
 class FBHyperSARA(ForwardBackward):
-    """
-    FBHyperSARA implements Hyper-uSARA algorithm based on forward-backward algorithm.
+    """Represent the Hyper-uSARA forward-backward optimiser.
 
-    It handles data fidelity in the forward step and uses SARA prior and
-    positivity constrained in the backward step for regularization.
+    This class combines the shared forward-backward optimisation loop with a
+    hyperspectral reweighted SARA prior under positivity. The optimisation is
+    organised into inner forward-backward iterations and outer major cycles
+    that refresh the wavelet-analysis weights.
+
+    Shape:
+        Image tensor: ``(1, C_rank, H, W)``.
+        Visibility tensor: tuple of ``C_rank`` tensors, each with shape
+            ``(1, 1, N_c)``.
+        Frequency tensor: ``(1, C_total, 1, 1)`` after reshaping in the base
+            optimiser.
+
+    Attributes:
+        _use_approx_meas_op (bool): Whether an approximate measurement operator
+            is used in the iterative forward step.
+        _im_max_itr_inner (int): Maximum number of iterations per major cycle.
+        _im_min_itr (int): Minimum number of inner iterations before checking
+            convergence.
+        _im_var_tol (float): Relative-variation tolerance for the inner loop.
+        _im_max_itr_outer (int): Maximum number of reweighting major cycles.
+        _im_var_tol_outer (float): Relative-variation tolerance for the outer
+            reweighting loop.
+        _reweight_save (bool): Whether intermediate products are saved at the
+            end of each major cycle.
+        _verbose (bool): Whether informational logs are printed.
+        _heuristic_l2 (torch.Tensor): Channel-collapsed heuristic level used
+            by the hyperspectral regulariser.
+        _model_prev_re (torch.Tensor): Model image saved at the start of the
+            current major cycle.
+        _iter_inner (int): Inner forward-backward iteration index within the
+            current major cycle.
+        _iter_outer (int): Major-cycle index for reweighting.
+        _reweighting_flag (bool): Whether the current iteration ended a major
+            cycle and triggered reweighting.
+        _t_iter_outer (float): Elapsed time of the current major cycle.
+        _im_rel_var (float): Current relative image variation in the inner
+            loop.
+        _im_rel_var_outer (float): Relative image variation between two
+            successive major cycles.
+
+    Example:
+        >>> optimiser = FBHyperSARA(
+        ...     meas=meas,
+        ...     ch_freq=ch_freq,
+        ...     meas_op=meas_op,
+        ...     regulariser=regulariser,
+        ... )
+        >>> optimiser.initialisation()
+        >>> optimiser.run()
+        >>> optimiser.finalisation()
+
+    References:
+        Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026). `HyperAIRI: A
+        Plug-and-play Algorithm for Precise Hyperspectral Image Reconstruction
+        in Radio Interferometry <https://doi.org/10.3847/1538-4365/ae3149>`_.
+        *The Astrophysical Journal Supplement Series, 283*(1), 9.
     """
 
     def __init__(
         self,
-        meas: torch.Tensor,
+        meas: List[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxHyperSARAPos,
@@ -44,29 +100,46 @@ class FBHyperSARA(ForwardBackward):
         reweight_save: bool = True,
         verbose: bool = True,
     ) -> None:
-        """
-        Initializes the Hyper-uSARA optimiser, which is built on forward-backward algorithm.
+        """Initialise the Hyper-uSARA optimiser.
 
         Args:
-            meas (torch.Tensor): The measurements to be used in the algorithm.
-            meas_op (MeasOpHyperspectral): The measurement operator.
-            regulariser (ProxHyperSARAPos): The proximal operator.
-            im_min_itr (int, optional): The minimum number of inner loop iterations.
-                Defaults to 30.
-            im_max_itr (int, optional): The maximum number of inner loop iterations.
-                Defaults to 2000.
-            im_var_tol (float, optional): The tolerance for inner loop image variation.
-                Defaults to 1e-5.
-            heu_reg_scale (float, optional): The heuristic regularization scale. Defaults to 1.0.
-            im_max_itr_outer (int, optional): The maximum number of outer loop iterations.
-                Defaults to 20.
-            im_var_tol_outer (float, optional): The tolerance for outer loop image variation.
-                Defaults to 1e-4.
-            save_pth (str, optional): The path to save the results. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to "".
-            reweight_save (bool, optional): Whether to save the reweighting results.
-            Defaults to True.
-            verbose (bool, optional): Whether to print verbose logs. Defaults to True.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for all spectral channels.
+            meas_op (MeasOpHyperspectral): Precise hyperspectral measurement
+                operator used for diagnostics and final products.
+            regulariser (ProxHyperSARAPos): Hyper-uSARA proximal regulariser.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
+            meas_op_approx (MeasOpHyperspectral | None, optional): Optional
+                approximate measurement operator used during the iterative
+                forward step. Default: None.
+            im_min_itr (int, optional): Minimum number of inner-loop
+                iterations before checking convergence. Default: 30.
+            im_max_itr (int, optional): Maximum number of inner-loop
+                iterations per major cycle. Default: 2000.
+            im_var_tol (float, optional): Relative-variation tolerance for the
+                inner loop. Default: 1e-5.
+            heu_reg_scale (float, optional): Multiplicative scaling applied to
+                the heuristic regularisation levels. Default: 1.0.
+            im_max_itr_outer (int, optional): Maximum number of reweighting
+                major cycles. Default: 20.
+            im_var_tol_outer (float, optional): Relative-variation tolerance
+                for the outer reweighting loop. Default: 1e-4.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            reweight_save (bool, optional): Save intermediate products at the
+                end of each major cycle. Default: True.
+            verbose (bool, optional): Enable informational logging.
+                Default: True.
+
+        Notes:
+            When ``meas_op_approx`` is provided, the approximate operator is
+            used in the iterative forward step while ``meas_op`` remains the
+            reference operator for dirty-image, PSF, and heuristic
+            calculations.
         """
         super().__init__(
             meas,
@@ -100,51 +173,49 @@ class FBHyperSARA(ForwardBackward):
         self._im_rel_var_outer = 1.0
 
     def initialisation(self) -> None:
-        """
-        Initialises specific parameters of Hyper-uSARA.
+        """Initialise Hyper-uSARA-specific optimisation parameters.
 
-        This method initialises the step size and the Hyper-uSARA proximity operator,
-        sets the heuristic regularization parameter and the noise floor level in
-        the wavelet domain. Some information will be printed if `verbose` is True.
+        This method sets the forward-backward step size, computes the
+        channel-wise and collapsed heuristic levels, configures the wavelet
+        noise floor and soft-thresholding levels, and initialises the first
+        set of reweighting coefficients.
         """
         if self._is_distributed:
             dist.barrier()
         if self._rank == 0 and self._verbose:
             print("\nINFO: initialise Hyper-uSARA optimiser...", flush=True)
 
-        # step size
+        # Set the forward-backward step size from the precise operator norm.
         self._gd_step_size = 1.98 / self._meas_op_precise.get_op_norm()
 
-        # heuristic noise level
+        # Estimate heuristic regularisation levels for local channels.
         self._calculate_channel_wise_heuristic()
-        # heuristic noise level for the l2 image
+        # Collapse the channel-wise heuristic into the l2 image heuristic.
         self._heuristic_l2 = torch.sum(self._heuristic**2, dim=1, keepdim=True)
         if self._is_distributed:
             self._heuristic_l2 = self._heuristic_l2.to(self._dist_device)
             dist.all_reduce(self._heuristic_l2, op=dist.ReduceOp.SUM)
             self._heuristic_l2 = self._heuristic_l2.to(self._regulariser.get_device())
         self._heuristic_l2 = torch.sqrt(self._heuristic_l2)
-            
 
-        # set noise floor level in wavelet domain
-        # The noise floor level is not affected by the heuristic scaling factor
-        # divided by 3.0 -> 9 wavelet bases
+        # Set the wavelet-domain noise floor independently of heuristic scaling.
+        # The factor 3.0 corresponds to the nine wavelet bases used internally.
         wl_noise_floor = self._heuristic_l2 / 3.0 / self._heu_noise_scale
         self._regulariser.set_noise_floor_level(wl_noise_floor)
-        # set soft thresholding value
+        # Set the soft-thresholding level used by the proximal operator.
         sfth_level = self._heuristic_l2 / 3.0
         self._regulariser.set_soft_thresholding_value(sfth_level)
 
-        # threshold used by spectral-index estimation in finalisation
+        # Cache the threshold used by spectral-index estimation in finalisation.
         self._spec_idx_prec = self._heuristic.min()
         if self._is_distributed:
             dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
         self._spec_idx_prec = self._spec_idx_prec.item()
 
-        # initialise weighting for the l1 norm
+        # Initialise the reweighting coefficients from the current model.
         self._regulariser.update(self._model)
 
-        # other parameters
+        # Reset the nested-loop counters and cached model state.
         self._model_prev_re = self._model
         self._iter_inner = 0
         self._iter_outer = 0
@@ -159,7 +230,8 @@ class FBHyperSARA(ForwardBackward):
                 flush=True,
             )
             print(
-                f"INFO: forward-backward step size (gamma): {self._gd_step_size:.4e}",
+                f"INFO: forward-backward step size (gamma): "
+                f"{self._gd_step_size:.4e}",
                 flush=True,
             )
             if self._use_approx_meas_op:
@@ -169,16 +241,17 @@ class FBHyperSARA(ForwardBackward):
                 )
             reg_param = self._heuristic_l2 / 3.0 / self._gd_step_size
             print(
-                f"INFO: regularization parameter (lambda): {reg_param.squeeze().cpu().item():.4e}",
+                f"INFO: regularization parameter (lambda): "
+                f"{reg_param.squeeze().cpu().item():.4e}",
                 flush=True,
             )
             print(
-                f"INFO: heuristic soft threolding level (gamma x lambda): "
+                f"INFO: heuristic soft thresholding level (gamma x lambda): "
                 f"{sfth_level.squeeze().cpu().item():.4e}",
                 flush=True,
             )
             print(
-                f"INFO: estimated noise floor level in l2 wavelet coeeficients: "
+                f"INFO: estimated noise floor level in l2 wavelet coefficients: "
                 f"{wl_noise_floor.squeeze().cpu().item():.4e}",
                 flush=True,
             )
@@ -190,10 +263,9 @@ class FBHyperSARA(ForwardBackward):
             dist.barrier()
 
     def _each_iter_begin(self) -> None:
-        """
-        Method to be executed at the beginning of each iteration.
+        """Run logic at the beginning of each iteration.
 
-        This method resets the timer at the start of each reweighting loop.
+        This method resets the outer-loop timer when a new major cycle starts.
         """
         if self._iter_inner == 0 and self._rank == 0 and self._verbose:
             print(
@@ -206,44 +278,42 @@ class FBHyperSARA(ForwardBackward):
 
     @torch.no_grad()
     def _stop_criteria(self) -> bool:
-        """
-        Checks the stop criteria for the algorithm.
+        """Evaluate the Hyper-uSARA stopping criteria.
 
-        The imaging loop will be terminated if the stop criteria of both inner loop
-        and reweighting loop are met. The stop criteria are: 1) meets the minimum number
-        of iterations and 2) the relative variation is smaller than tolerance or the
-        maximum number of iterations is reached. The `_reweighting_flag` will be set if
-        the inner loop stop criteria is met.
+        The algorithm stops only after both the inner forward-backward loop and
+        the outer reweighting loop satisfy their respective stopping
+        conditions.
 
         Returns:
-            bool: Whether the stop criteria is met.
+            bool: ``True`` when the overall optimisation should stop,
+            otherwise ``False``.
         """
-        # img relative variation
+        # Compute the relative variation of the image model.
         model_norm = torch.sum(self._model**2)
         model_diff_norm = torch.sum((self._model - self._model_prev) ** 2)
-        # gather norms from all ranks
+        # Gather the global norms across all ranks.
         if self._is_distributed:
             dist.all_reduce(model_norm, op=dist.ReduceOp.SUM)
             dist.all_reduce(model_diff_norm, op=dist.ReduceOp.SUM)
         self._im_rel_var = torch.sqrt(model_diff_norm / model_norm).item()
 
-        # log
         if self._verbose and self._rank == 0:
             print(
-                f"Cumulative itr: {self._iter+1},  re-weighting itr: {self._iter_outer+1},",
-                f"forward-backward itr: {self._iter_inner+1},",
-                f"relative variation {self._im_rel_var:.3e}",
-                f"\ntimings: gradient step {self._t_forward:#.3g} sec,",
-                f"denoising step {self._t_backward:#.3g} sec,",
+                f"Cumulative itr: {self._iter+1}, "
+                f"re-weighting itr: {self._iter_outer+1}, "
+                f"forward-backward itr: {self._iter_inner+1}, "
+                f"relative variation {self._im_rel_var:.3e}"
+                f"\ntimings: gradient step {self._t_forward:#.3g} sec, "
+                f"denoising step {self._t_backward:#.3g} sec, "
                 f"iteration {self._t_iter:#.3g} sec.\n",
                 flush=True,
             )
 
-        # stop criteria
         if (
             self._iter_inner + 1 >= self._im_min_itr
             and self._im_rel_var < self._im_var_tol
         ) or self._iter_inner + 1 >= self._im_max_itr_inner:
+            # The inner loop has converged or reached the maximum number of iterations
             self._t_iter_outer = timer() - self._t_iter_outer
             self._reweighting_flag = True
             model_diff_norm = torch.sum((self._model - self._model_prev_re) ** 2)
@@ -253,20 +323,20 @@ class FBHyperSARA(ForwardBackward):
                 model_diff_norm / (model_norm + 1e-12)
             ).item()
             self._model_prev_re = self._model
-            # log
             if self._verbose and self._rank == 0:
                 print(
-                    "************************** Major cycle",
+                    f"************************** Major cycle "
                     f"{self._iter_outer+1} finished **************************",
                     flush=True,
                 )
                 print(
-                    f"INFO: Re-weighting iteration {self._iter_outer+1}",
+                    f"INFO: Re-weighting iteration {self._iter_outer+1} "
                     f"completed in {self._t_iter_outer:#.4g} sec.",
                     flush=True,
                 )
                 print(
-                    f"INFO: Image relative variation of the major cycle {self._im_rel_var_outer:#.3g}",
+                    f"INFO: Image relative variation of the major cycle "
+                    f"{self._im_rel_var_outer:#.3g}",
                     flush=True,
                 )
 
@@ -274,21 +344,21 @@ class FBHyperSARA(ForwardBackward):
                 self._im_rel_var_outer < self._im_var_tol_outer
                 or self._iter_outer + 1 >= self._im_max_itr_outer
             ):
+                # The outer loop has converged or reached the maximum number of major cycles
                 return True
 
         return False
 
     @torch.no_grad()
     def _each_iter_end(self) -> None:
-        """
-        Method to be executed at the end of each iteration.
+        """Run post-processing at the end of each iteration.
 
-        This method saves intermediate results, and updates the HyperSARA wavelet coeeficients
-        weights if the reweighting flag is set. The inner and outer iteration counters will
-        also be updated accordingly.
+        When an inner loop finishes, this method refreshes the reweighting
+        coefficients, optionally saves intermediate products, and advances the
+        major-cycle counters.
         """
         if self._reweighting_flag:
-            # update l1 weighting
+            # Refresh the reweighting coefficients for the next major cycle.
             self._regulariser.update(self._model)
 
             if self._verbose:
@@ -300,7 +370,7 @@ class FBHyperSARA(ForwardBackward):
                         flush=True,
                     )
 
-            # save intermediate results
+            # Save intermediate products at the end of each major cycle.
             if self._reweight_save:
                 model_full_np = self.get_model_image(dtype=torch.float32)
                 residual_full_np = self.get_residual_image(dtype=torch.float32)
@@ -336,12 +406,11 @@ class FBHyperSARA(ForwardBackward):
 
     @torch.no_grad()
     def finalisation(self) -> None:
-        """
-        Finalises the imaging process and saves the final images.
+        """Finalise Hyper-uSARA and save the reconstructed products.
 
-        This method calculates the residual image, prints information about
-        the process if verbose mode is on, and saves the final model and
-        residual images in FITS format.
+        This method prints final log information, saves the reconstructed model
+        and residual dirty images, and exports a spectral-index map when the
+        final model has a spectral dimension.
         """
         if self._verbose and self._rank == 0:
             print("\n**************************************", flush=True)
@@ -353,7 +422,7 @@ class FBHyperSARA(ForwardBackward):
                 flush=True,
             )
 
-        # save final images
+        # Save the final model, residual, and optional spectral-index products.
         model_full_np = self.get_model_image()
         residual_full_np = self.get_residual_image()
         if self._rank == 0:
@@ -370,7 +439,7 @@ class FBHyperSARA(ForwardBackward):
                 overwrite=True,
             )
 
-            # generate spectral index map if applicable
+            # Generate a spectral-index map only for hyperspectral outputs.
             if len(model_full_np.shape) > 2:
                 result_spec_idx = get_spec_idx(
                     model_full_np,

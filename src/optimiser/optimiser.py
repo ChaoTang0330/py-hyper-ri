@@ -1,23 +1,56 @@
-"""
-Base class for optimisers
+"""Define the abstract base class for optimisers.
+
+This module provides the shared optimiser interface used by all imaging
+algorithms together with helper methods for exporting distributed image-domain
+products such as the model image, dirty image, PSF, and residual image.
 """
 
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 
 from ..measurement_operator import MeasOp
 
 
 class Optimiser(ABC):
-    """
-    Base class for optimisers.
+    """Represent the shared interface for imaging optimisers.
 
-    This class provides a common interface for different optimisation algorithms.
-    It is initialized with a measurement, a measurement operator, and an optional save path.
+    This class stores measurement data, channel metadata, and common image
+    buffers used by optimiser implementations. It also defines the lifecycle
+    hooks implemented by concrete forward-backward and primal-dual algorithms.
+    In distributed runs, it tracks per-rank channel ownership and provides
+    helper methods for gathering image-domain tensors back to a destination
+    rank.
+
+    Attributes:
+        _meas_op (MeasOp): Measurement operator used by the optimiser.
+        _ch_freq (torch.Tensor): Local channel frequencies with shape
+            ``(1, C_rank, 1, 1)``.
+        _meas (torch.Tensor | tuple[torch.Tensor, ...]): Local measurement
+            tensors moved to the measurement-operator device.
+        _save_pth (str): Output directory for saved products.
+        _file_prefix (str): Prefix appended to saved file names.
+        _rank_ch_num (int): Number of channels owned by the current rank.
+        _rank_ch_start (int): Global starting channel index for the current
+            rank.
+        _meas_bp (torch.Tensor): Backprojected dirty image cube.
+        _model (torch.Tensor): Current model image cube.
+        _model_prev (torch.Tensor): Previous model image cube.
+        _psf (torch.Tensor): Local PSF cube.
+        _is_distributed (bool): Whether ``torch.distributed`` is initialised.
+        _rank (int): Distributed rank index.
+        _world_size (int): Number of distributed ranks.
+        _ch_num_each_rank (tuple[int, ...]): Local channel counts for every
+            rank.
+
+    Example:
+        >>> # Concrete subclasses implement the abstract optimisation hooks.
+        >>> optimiser = SomeOptimiser(meas, ch_freq, meas_op)
+        >>> optimiser.initialisation()
+        >>> optimiser.run()
     """
 
     def __init__(
@@ -29,17 +62,21 @@ class Optimiser(ABC):
         file_prefix: str = "",
         rank_ch_start: int = 0,
     ) -> None:
-        """
-        General initialization of the Optimiser.
-        Prepare the measurement data, measurement operator.
-        Generate and svae the dirty image and PSF.
+        """Initialise shared optimiser state.
 
         Args:
-            meas (torch.Tensor): The measurement tensor.
-            ch_freq (torch.Tensor): The frequency of each channel.
-            meas_op (MeasOp): The measurement operator.
-            save_pth (str, optional): The path where results will be saved. Defaults to "results".
-            file_prefix (str, optional): The prefix of the saving files. Defaults to None.
+            meas (List[torch.Tensor]): Local measurement tensors, typically one
+                tensor per local channel.
+            ch_freq (torch.Tensor): Frequencies for the local spectral
+                channels.
+            meas_op (MeasOp): Measurement operator used for forward and adjoint
+                applications.
+            save_pth (str, optional): Directory where optimiser products are
+                saved. Default: ``"results"``.
+            file_prefix (str, optional): Prefix prepended to saved file names.
+                Default: ``""``.
+            rank_ch_start (int, optional): Global starting channel index owned
+                by the current rank. Default: 0.
         """
         self._meas_op = meas_op
         self._ch_freq = ch_freq.to(
@@ -63,7 +100,7 @@ class Optimiser(ABC):
         self._rank_ch_num = len(meas)
         self._rank_ch_start = rank_ch_start
 
-        # common initialisation
+        # Allocate shared image-domain buffers for all optimiser variants.
         self._meas_bp = torch.zeros(
             1,
             self._rank_ch_num,
@@ -75,7 +112,7 @@ class Optimiser(ABC):
         self._model_prev = torch.zeros_like(self._meas_bp)
         self._psf = torch.zeros_like(self._meas_bp)
 
-        # init distributed
+        # Record distributed metadata and per-rank channel counts.
         self._is_distributed = dist.is_available() and dist.is_initialized()
         self._rank = dist.get_rank() if self._is_distributed else 0
         self._world_size = dist.get_world_size() if self._is_distributed else 1
@@ -98,7 +135,7 @@ class Optimiser(ABC):
                 ch_num_each_rank_tensor.cpu().numpy().tolist()
             )
 
-            # device for p2p communication
+            # Select a control device for distributed tensor exchanges.
             dist_backend = dist.get_backend()
             if dist_backend == "nccl":
                 self._dist_device = torch.device("cuda")
@@ -110,76 +147,72 @@ class Optimiser(ABC):
 
     @abstractmethod
     def initialisation(self) -> Any:
-        """
-        Initalise parameters for specific parameters.
-        This method should be called before running the optimiser.
+        """Initialise algorithm-specific state before the optimisation loop.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined initialisation result.
         """
         return NotImplemented
 
     @abstractmethod
     def run(self) -> Any:
-        """
-        Runs the main loop of the optimiser.
+        """Run the main optimisation loop.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined run result.
         """
         return NotImplemented
 
     @abstractmethod
     def _each_iter_begin(self) -> Any:
-        """
-        This method should be called at the beginning of each iteration.
+        """Run subclass logic at the beginning of each iteration.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined iteration state.
         """
         return NotImplemented
 
     @abstractmethod
     def _stop_criteria(self) -> Any:
-        """
-        Checks the stop criteria.
+        """Evaluate the stopping criterion for the optimisation loop.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined stopping indicator.
         """
         return NotImplemented
 
     @abstractmethod
     def _each_iter_end(self) -> Any:
-        """
-        This method should be called at the end of each iteration.
+        """Run subclass logic at the end of each iteration.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined iteration state.
         """
         return NotImplemented
 
     @abstractmethod
     def finalisation(self) -> Any:
-        """
-        This method should be called after the optimiser's main loop finishes.
-        It can be used to save the final results, print final log etc.
+        """Finalise optimisation after the main loop terminates.
 
         Returns:
-            NotImplemented: This method should be implemented in a subclass.
+            Any: Subclass-defined finalisation result.
         """
         return NotImplemented
 
-    def get_model_image(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
-        """
-        Get the final model image.
+    def get_model_image(
+        self, dtype: torch.dtype = torch.double, dest: int = 0
+    ) -> Optional[np.ndarray]:
+        """Return the gathered model image cube.
 
-        args:
-            dtype (torch.dtype): The data type of the output model image.
-            dest (int): Destination rank to gather tensors.
+        Args:
+            dtype (torch.dtype, optional): Output dtype used before converting
+                to NumPy. Default: ``torch.double``.
+            dest (int, optional): Destination rank for distributed gathering.
+                Default: 0.
 
         Returns:
-            np.ndarray: The final model.
+            np.ndarray | None: Gathered model image on ``dest``, or ``None`` on
+            non-destination ranks in distributed runs.
         """
         model_full = self._gather_ch_img_to_tensor(
             self._model,
@@ -189,15 +222,20 @@ class Optimiser(ABC):
             return None
         return model_full.squeeze().cpu().to(dtype).numpy()
 
-    def get_psf(self, dtype=torch.double, dest: int = 0) -> np.ndarray:
-        """
-        Get the PSF.
+    def get_psf(
+        self, dtype: torch.dtype = torch.double, dest: int = 0
+    ) -> Optional[np.ndarray]:
+        """Return the gathered PSF cube.
 
-        args:
-            dtype (torch.dtype): The data type of the output PSF.
-            dest (int): Destination rank to gather tensors.
+        Args:
+            dtype (torch.dtype, optional): Output dtype used before converting
+                to NumPy. Default: ``torch.double``.
+            dest (int, optional): Destination rank for distributed gathering.
+                Default: 0.
+
         Returns:
-            np.ndarray: The PSF.
+            np.ndarray | None: Gathered PSF on ``dest``, or ``None`` on
+            non-destination ranks in distributed runs.
         """
         psf_full = self._gather_ch_img_to_tensor(
             self._psf,
@@ -208,17 +246,24 @@ class Optimiser(ABC):
         return psf_full.squeeze().cpu().to(dtype).numpy()
 
     def get_dirty_image(
-        self, normalise=None, dtype=torch.double, dest: int = 0
+        self,
+        normalise: Optional[float] = None,
+        dtype: torch.dtype = torch.double,
+        dest: int = 0,
     ) -> Optional[np.ndarray]:
-        """
-        Get the dirty image.
+        """Return the gathered dirty image cube.
 
-        args:
-            dtype (torch.dtype): The data type of the output dirty image.
-            dest (int): Destination rank to gather tensors.
+        Args:
+            normalise (float | None, optional): Optional scalar divisor applied
+                to the dirty image before gathering. Default: None.
+            dtype (torch.dtype, optional): Output dtype used before converting
+                to NumPy. Default: ``torch.double``.
+            dest (int, optional): Destination rank for distributed gathering.
+                Default: 0.
 
         Returns:
-            np.ndarray: The dirty image.
+            np.ndarray | None: Gathered dirty image on ``dest``, or ``None`` on
+            non-destination ranks in distributed runs.
         """
         dirty_full = self._gather_ch_img_to_tensor(
             self._meas_bp / (normalise if normalise is not None else 1.0),
@@ -229,17 +274,19 @@ class Optimiser(ABC):
         return dirty_full.squeeze().cpu().to(dtype).numpy()
 
     def get_residual_image(
-        self, dtype=torch.double, dest: int = 0
+        self, dtype: torch.dtype = torch.double, dest: int = 0
     ) -> Optional[np.ndarray]:
-        """
-        Get the residual image.
+        """Return the gathered residual image cube.
 
-        args:
-            dtype (torch.dtype): The data type of the output residual image.
-            dest (int): Destination rank to gather tensors.
+        Args:
+            dtype (torch.dtype, optional): Output dtype used before converting
+                to NumPy. Default: ``torch.double``.
+            dest (int, optional): Destination rank for distributed gathering.
+                Default: 0.
 
         Returns:
-            np.ndarray: The residual image.
+            np.ndarray | None: Gathered residual image on ``dest``, or ``None``
+            on non-destination ranks in distributed runs.
         """
         residual_rank = self._meas_bp - self._meas_op.adjoint_op(
             self._meas_op.forward_op(self._model)
@@ -257,17 +304,29 @@ class Optimiser(ABC):
         tensor_ch_rank: torch.Tensor,
         dest: int = 0,
     ) -> Optional[torch.Tensor]:
-        """
-        Gather tensors have different number of channels from all ranks to the tensor at destination rank.
+        """Gather channel-partitioned image tensors to a destination rank.
+
         Args:
-            tensor_ch_rank (torch.Tensor): Tensor on each rank with shape (1, rank_ch_num, H, W).
+            tensor_ch_rank (torch.Tensor): Local tensor with shape
+                ``(1, C_rank, H, W)``.
+            dest (int, optional): Destination rank for distributed gathering.
+                Default: 0.
+
         Returns:
-            torch.Tensor: Gathered tensor on the destination rank with shape (1, total_ch_num, H, W)
-                at the destination rank, None on other ranks.
+            torch.Tensor | None: Gathered tensor with shape
+            ``(1, C_total, H, W)`` on ``dest``, or ``None`` on non-destination
+            ranks.
+
+        Notes:
+            Ranks with fewer channels are zero-padded temporarily so
+            ``torch.distributed.gather`` can operate on tensors with matching
+            shapes before the padding is removed on ``dest``.
         """
+        # If not distributed, return the input tensor directly.
         if self._world_size <= 1:
             return tensor_ch_rank
 
+        # Pad local tensors to the same channel count.
         max_ch_num = max(self._ch_num_each_rank)
         if tensor_ch_rank.shape[1] < max_ch_num:
             tensor_pad = torch.cat(
@@ -285,14 +344,18 @@ class Optimiser(ABC):
         else:
             tensor_pad = tensor_ch_rank
 
+        # Gather the padded tensors to the destination rank.
         gather_list = (
             [torch.empty_like(tensor_pad) for _ in range(self._world_size)]
             if self._rank == dest
             else None
         )
         dist.gather(tensor_pad, gather_list=gather_list, dst=dest)
+
+        # Exit early on non-destination ranks.
         if self._rank != dest:
             return None
+        # Concatenate the gathered tensors and remove padding.
         tensor_full = torch.cat(
             [
                 gather_list[r][:, : self._ch_num_each_rank[r], :, :]

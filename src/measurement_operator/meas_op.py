@@ -19,8 +19,8 @@ class MeasOp(ABC):
     for operator-norm estimation and PSF evaluation.
 
     Shape:
-        Image tensors: ``(B, C, H, W)``.
-        Visibility-domain tensors: ``(B, C, N)``.
+        Image tensor: ``(B, C, H, W)``.
+        Visibility tensor: ``(B, C, N)``.
 
     Attributes:
         _img_size (Tuple[int, int]): Target image size ``(H, W)``.
