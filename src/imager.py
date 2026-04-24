@@ -1,5 +1,8 @@
-"""
-Prepare proper measurement operator, prior and algorithm for imaging task
+"""Configure and run imaging workflows.
+
+This module assembles the measurement operator, regulariser, and optimiser
+from user-provided parameter dictionaries, then optionally runs the imaging
+loop.
 """
 
 from typing import Dict
@@ -20,36 +23,37 @@ from .measurement_operator import MeasOpHyperspectral
 
 
 def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> None:
-    """
-    Imager for small scale RI imaging task.
+    """Prepare the imaging components and optionally run reconstruction.
 
-    This function prepares the measurement operator, prior, and algorithm for the imaging task.
-    It supports different algorithms such as 'airi', 'usara', and 'cairi'. The function also
-    handles the imaging process if the 'flag_imaging' is set in the 'param_optimiser'.
+    This function loads the input data, instantiates the requested
+    hyperspectral measurement operator, builds the corresponding regulariser
+    and optimiser, and executes the full imaging loop when requested.
 
     Args:
-        param_optimiser (dict): A dictionary containing the parameters for the optimiser.
-            It includes parameters like 'algorithm', 'im_min_itr', 'im_max_itr', 'im_var_tol',
-            'im_peak_est', 'heu_noise_scale', 'dnn_adaptive_peak', 'dnn_adaptive_peak_tol_min',
-            'dnn_adaptive_peak_tol_max', 'dnn_adaptive_peak_tol_step', 'result_path', 'itr_save',
-            'verbose', and 'flag_imaging'.
-        param_measop (dict): A dictionary containing the parameters for the measurement operator.
-            It includes parameters like 'superresolution', 'im_pixel_size', 'flag_data_weighting',
-            'weight_load', 'img_size', 'weight_type', 'weight_gridsize', 'weight_robustness',
-            'dtype', 'device', 'nufft_grid_size', 'nufft_kb_kernel_dim', and 'nufft_mode'.
-        param_proxop (dict): A dictionary containing the parameters for the proximal operator.
-            It includes parameters like 'dnn_shelf_path', 'dnn_apply_transform', 'device', 'dtype',
-            and 'verbose'.
+        param_optimiser (Dict): Optimiser configuration dictionary, including
+            the algorithm choice, iteration controls, output paths, and
+            distributed-imaging options.
+        param_measop (Dict): Measurement-operator configuration dictionary,
+            including Fourier backend, weighting options, image geometry, and
+            numerical settings.
+        param_proxop (Dict): Regulariser configuration dictionary, including
+            denoiser shelf paths, devices, dtypes, and verbosity settings.
+
+    Raises:
+        ValueError: If the number of distributed processes exceeds the number
+            of effective channels or if the requested NUFFT backend is not
+            supported.
+        NotImplementedError: If the requested imaging algorithm is not
+            implemented.
     """
 
-    # set torch flags for reproducibility and performance
+    # Set PyTorch flags for deterministic behaviour and runtime performance.
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark = True
 
-    # init torch.distributed
-    # Get process info from environment variables
+    # Collect distributed-runtime metadata from environment variables.
     param_comm = {
         "rank": env_int("RANK", 0),
         "world_size": env_int("WORLD_SIZE", 1),
@@ -62,13 +66,14 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
     }
     use_distributed = param_comm["world_size"] > 1
 
-    # sanity check
+    # Ensure that channel partitioning is compatible with the process count.
     if param_comm["world_size"] > param_optimiser["ch_effective"]:
         raise ValueError(
             f"Number of processes ({param_comm['world_size']}) should not exceed"
             f"the number of effective channels ({param_optimiser['ch_effective']})."
         )
 
+    # Initialise torch.distributed only when multi-process imaging is requested.
     if use_distributed:
         dist.init_process_group(
             backend=param_optimiser["dist_backend"],
@@ -78,7 +83,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             device_id=param_comm["rank_device_id"],
         )
 
-    # Small header
+    # Print a short distributed-runtime summary from rank 0.
     if use_distributed:
         dist.barrier()
         if param_comm["rank"] == 0:
@@ -93,7 +98,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             )
         dist.barrier()
 
-    # load data
+    # Load visibilities, weights, frequencies, and channel partition metadata.
     data = load_data_to_tensor(
         uv_file_path=param_optimiser["data_file"],
         super_resolution=param_measop["superresolution"],
@@ -115,7 +120,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         invert_uvw_flag=param_measop["invert_uvw_flag"],
     )
 
-    # prepare measurement operator
+    # Select the requested single-channel NUFFT backend.
     MeasOpClass = None
     if param_measop["nufft_package"] == "finufft":
         MeasOpClass = MeasOpFinufft
@@ -126,6 +131,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             f"Unsupported measurement operator type: {param_measop['nufft_package']}"
         )
 
+    # Build the precise hyperspectral measurement operator used for imaging.
     meas_op = MeasOpHyperspectral(
         u=data["u"],
         v=data["v"],
@@ -142,6 +148,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
 
     meas_op_approx = None
     if param_optimiser["approx_meas_op"]:
+        # Optionally build a PSF-based surrogate for faster iterative updates.
         meas_op_approx = MeasOpHyperspectral(
             u=data["u"],
             v=data["v"],
@@ -153,9 +160,9 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             dtype=param_measop["dtype"],
         )
 
-    # prepare regulariser and optimiser for specfic algorithm
+    # Instantiate the regulariser and optimiser requested by the algorithm name.
     if param_optimiser["algorithm"] == "usara":
-        # prepare proximal operator of SARA with positivity constraint
+        # Build the uSARA positivity-constrained proximal operator.
         prox_op_sara = ProxSARAPos(
             param_optimiser["img_size"],
             rank_num_ch=len(data["y"]),
@@ -165,7 +172,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             verbose=param_proxop["verbose"],
         )
 
-        # prepare uSARA optimiser
+        # Build the uSARA optimiser.
         optimiser = FBSARA(
             meas=data["y"],
             ch_freq=data["freqs"],
@@ -186,7 +193,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         )
 
     elif param_optimiser["algorithm"] == "hyper-usara":
-        # prepare proximal operator of Hyper-uSARA with positivity constraint
+        # Build the Hyper-uSARA positivity-constrained proximal operator.
         prox_op_sara = ProxHyperSARAPos(
             param_optimiser["img_size"],
             rank_num_ch=len(data["y"]),
@@ -196,7 +203,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             verbose=param_proxop["verbose"],
         )
 
-        # prepare Hyper-uSARA optimiser
+        # Build the Hyper-uSARA optimiser.
         optimiser = FBHyperSARA(
             meas=data["y"],
             ch_freq=data["freqs"],
@@ -217,7 +224,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         )
 
     elif param_optimiser["algorithm"] == "airi":
-        # prepare AIRI denoiser
+        # Build the AIRI denoiser.
         denoiser_airi = DenAIRI(
             param_proxop["dnn_shelf_path"],
             rand_trans=param_proxop["dnn_apply_transform"],
@@ -228,7 +235,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             verbose=param_proxop["verbose"],
         )
 
-        # prepare AIRI optimiser
+        # Build the AIRI optimiser.
         optimiser = FBAIRI(
             meas=data["y"],
             ch_freq=data["freqs"],
@@ -252,7 +259,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         )
 
     elif param_optimiser["algorithm"] == "cairi":
-        # prepare AIRI denoiser
+        # Build the AIRI denoiser for the primal update.
         denoiser_airi = DenAIRI(
             param_proxop["dnn_shelf_path"],
             rand_trans=param_proxop["dnn_apply_transform"],
@@ -263,6 +270,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             verbose=param_proxop["verbose"],
         )
 
+        # Build the ellipsoidal dual-data prox from the measured visibilities.
         prox_op_dual_data = ProxEllipsoid(
             center=data["y"],
             precond_weight=data["precond_weight"],
@@ -272,6 +280,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             dtype=meas_op.get_data_type_meas(),
         )
 
+        # Build the constrained AIRI optimiser.
         optimiser = PDAIRI(
             meas=data["y"],
             ch_freq=data["freqs"],
@@ -295,7 +304,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         )
 
     elif param_optimiser["algorithm"] == "hyperairi":
-        # prepare prior
+        # Build the HyperAIRI denoiser.
         den_hyperairi = DenHyperAIRI(
             img_size=param_optimiser["img_size"],
             rank_num_ch=len(data["y"]),
@@ -308,7 +317,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             verbose=param_proxop["verbose"],
         )
 
-        # prepare optimiser
+        # Build the HyperAIRI optimiser.
         optimiser = FBHyperAIRI(
             meas=data["y"],
             ch_freq=data["freqs"],
@@ -343,18 +352,18 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
             f"Unsupported algorithm: {param_optimiser['algorithm']}"
         )
 
-    # imaging
+    # Run the imaging workflow only when explicitly requested.
     if param_optimiser["flag_imaging"]:
-
-        # initialisation
+        # Initialise the optimiser state and auxiliary quantities.
         optimiser.initialisation()
 
-        # run imaging loop
+        # Execute the main optimisation loop.
         optimiser.run()
 
-        # finalisation
+        # Save final products and print the closing summary.
         optimiser.finalisation()
 
+        # Print the maximum GPU memory allocated during execution.
         if param_optimiser["verbose"] and torch.cuda.is_available():
             if use_distributed:
                 dist.barrier()
@@ -365,7 +374,7 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
                 flush=True,
             )
 
-    # clsoing down torch.distributed
+    # Synchronise and close the distributed runtime cleanly.
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     if use_distributed:
