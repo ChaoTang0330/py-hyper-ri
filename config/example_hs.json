@@ -110,7 +110,9 @@
             "dnn_shelf_path": "./airi_denoisers/shelf_hyperairi_mix.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
-            "dnn_apply_transform": true
+            "dnn_apply_transform": true,
+            "spec_update": true,
+            "spec_idx_init": "zero"
         },
         "hyperairi_default": {
             "denoiser_comment_2": "airi default params",
@@ -121,7 +123,12 @@
             "itr_save": 5000,
             "dnn_adaptive_peak_tol_max": 1e-1,
             "dnn_adaptive_peak_tol_min": 1e-5,
-            "dnn_adaptive_peak_tol_step": 0.1
+            "dnn_adaptive_peak_tol_step": 0.1,
+            "spec_max_update_count": 50,
+            "spec_max_update_interval": 60,
+            "spec_update_tol_max": 1.6e-3,
+            "spec_update_tol_min": 1e-5,
+            "spec_update_tol_step": 0.5
         },
         "hyper-usara": {
             "denoiser_comment_1": "hyper-usara params",
