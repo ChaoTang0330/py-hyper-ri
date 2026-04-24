@@ -1,8 +1,10 @@
-"""
-Measurement operators built on NUFFT using pytorch_finufft library
+"""Define the FINUFFT-backed NUFFT measurement operator.
+
+This implementation uses ``pytorch_finufft`` to evaluate nonuniform Fourier
+transforms for forward and adjoint measurement operations.
 """
 
-from typing import Tuple
+from typing import Any, Tuple
 
 import torch
 
@@ -10,10 +12,44 @@ from .meas_op_nufft import MeasOpNUFFT
 
 
 class MeasOpFinufft(MeasOpNUFFT):
-    """
-    Measurement operators sampling in continuous spatial Fourier domain.
-    Use pytorch_finufft as the NUFFT package, which is a PyTorch wrapper for FINUFFT.
-    Uses `exponential of semi-circle' kernel instead of Kaiser-Bessel kernel.
+    """Represent a NUFFT measurement operator backed by FINUFFT.
+
+    This class evaluates nonuniform Fourier sampling with
+    ``pytorch_finufft`` for single-channel measurement operators. It reuses
+    the weighting and preconditioning logic defined in :class:`MeasOpNUFFT`
+    while adapting the shared trajectory representation to FINUFFT's calling
+    convention. The forward operator maps image-domain tensors to sampled
+    visibilities, and the adjoint operator maps weighted visibilities back to
+    the image domain.
+
+    Shape:
+        Image tensors: ``(1, 1, H, W)``.
+        Visibility-domain tensors: ``(1, 1, N)``.
+        Sampling-pattern coordinates :math:`u` and :math:`v`: ``(1, 1, N)``.
+
+    Attributes:
+        _traj (torch.Tensor): Sampling trajectory stored in FINUFFT-compatible
+            ``(2, N)`` layout.
+        _data_weight (torch.Tensor): Combined natural and imaging weights
+            applied in measurement space.
+        _precond_weight (torch.Tensor): Preconditioning weights applied around
+            the backend NUFFT calls.
+        _finufft_type1 (Callable): Imported FINUFFT adjoint transform.
+        _finufft_type2 (Callable): Imported FINUFFT forward transform.
+
+    Example:
+        >>> import torch
+        >>> u = (2 * torch.pi) * torch.rand(1, 1, 8) - torch.pi
+        >>> v = (2 * torch.pi) * torch.rand(1, 1, 8) - torch.pi
+        >>> op = MeasOpFinufft(
+        ...     u=u,
+        ...     v=v,
+        ...     img_size=(16, 16),
+        ... )
+        >>> image = torch.randn(1, 1, 16, 16)
+        >>> vis = op.forward_op(image)
+        >>> vis.shape
+        torch.Size([1, 1, 8])
     """
 
     def __init__(
@@ -27,29 +63,30 @@ class MeasOpFinufft(MeasOpNUFFT):
         real_flag: bool = True,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
-        **kwargs
+        **kwargs: Any
     ) -> None:
-        """
-        Initialize the measurement operator.
+        """Initialise the FINUFFT measurement operator.
 
-        :param u: The u coordinates of the sampling points in units of radians.
-        :type u: torch.Tensor
-        :param v: The v coordinates of the sampling points in units of radians.
-        :type v: torch.Tensor
-        :param img_size: The target image size.
-        :type img_size: Tuple[int, int]
-        :param natural_weight: The natural weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type natural_weight: torch.Tensor, optional
-        :param image_weight: The image weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type image_weight: torch.Tensor, optional
-        :param precond_weight:  The preconditioning weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type precond_weight: torch.Tensor, optional
-        :param real_flag: Flag to indicate the image is real of complex, defaults to True
-        :type real_flag: bool, optional
-        :param device: The device where the measurement operator will run on, defaults to torch.device("cpu")
-        :type device: torch.device, optional
-        :param dtype: Data precision, defaults to torch.float
-        :type dtype: torch.dtype, optional
+        Args:
+            u (torch.Tensor): ``u`` sampling coordinates in radians.
+            v (torch.Tensor): ``v`` sampling coordinates in radians.
+            img_size (Tuple[int, int]): Target image size ``(H, W)``.
+            natural_weight (torch.Tensor, optional): Natural weighting tensor.
+                Default: ``torch.ones(1, 1, 1)``.
+            image_weight (torch.Tensor, optional): Imaging weighting tensor.
+                Default: ``torch.ones(1, 1, 1)``.
+            precond_weight (torch.Tensor, optional): Data-space
+                preconditioning tensor. Default: ``torch.ones(1, 1, 1)``.
+            real_flag (bool, optional): If True, keep adjoint outputs real when
+                applicable. Default: True.
+            device (torch.device, optional): Execution device. Default:
+                ``torch.device("cpu")``.
+            dtype (torch.dtype, optional): Image-domain dtype. Default:
+                ``torch.float``.
+            **kwargs: Reserved for API compatibility with other backends.
+
+        Raises:
+            ImportError: If ``pytorch_finufft`` is unavailable.
         """
         super().__init__(
             u=u,
@@ -63,29 +100,30 @@ class MeasOpFinufft(MeasOpNUFFT):
             dtype=dtype,
         )
 
-        # import pytorch_finufft here to avoid hard dependency
+        # Import lazily to avoid hard dependency when this backend is unused.
         try:
             from pytorch_finufft.functional import finufft_type1, finufft_type2
             self._finufft_type1 = finufft_type1
             self._finufft_type2 = finufft_type2
         except ImportError as e:
             raise ImportError(
-                "pytorch_finufft is required for MeasOpFinufft but is not installed. "
-                "Please install it via `pip install pytorch-finufft` or refer to the documentation for more details."
+                "pytorch_finufft is required for MeasOpFinufft but is not installed.\n"
+                "Please install it via `pip install pytorch-finufft` or refer to the "
+                "documentation for more details."
             ) from e
 
+        # FINUFFT consumes coordinates as a 2 x M trajectory tensor.
         self._traj = self._traj.squeeze(0)
 
     def _GA(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward NUFFT with data weight
+        """Apply forward FINUFFT and data weighting.
 
-        :param x: The input tensor in the image domain.
-        :type x: torch.Tensor
-        :return: The result of the forward NUFFT operation.
-        :rtype: torch.Tensor
+        Args:
+            x (torch.Tensor): Image-domain input tensor.
+
+        Returns:
+            torch.Tensor: Weighted measurement-domain tensor.
         """
-        x = x.view(*x.shape[-2:])
         return (
             self._finufft_type2(
                 self._traj,
@@ -98,13 +136,13 @@ class MeasOpFinufft(MeasOpNUFFT):
         )
 
     def _AtGt(self, y: torch.Tensor) -> torch.Tensor:
-        """
-        Adjoint NUFFT with data weight.
+        """Apply adjoint FINUFFT and data weighting.
 
-        :param y: The input tensor in the Fourier domain.
-        :type y: torch.Tensor
-        :return: The result of the adjoint NUFFT operation.
-        :rtype: torch.Tensor
+        Args:
+            y (torch.Tensor): Measurement-domain input tensor.
+
+        Returns:
+            torch.Tensor: Image-domain adjoint output tensor.
         """
         return self._finufft_type1(
             self._traj,

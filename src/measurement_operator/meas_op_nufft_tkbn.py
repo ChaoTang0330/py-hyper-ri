@@ -1,17 +1,56 @@
-"""
-Measurement operators built on NUFFT using torchkbnufft library
+"""Define the TKBNUFFT-backed measurement operator.
+
+This implementation uses ``torchkbnufft`` for forward and adjoint NUFFT
+operations.
 """
 
-from typing import Tuple
+from typing import Any, Tuple
 
+import numpy as np
 import torch
 
 from .meas_op_nufft import MeasOpNUFFT
 
 
 class MeasOpTkbn(MeasOpNUFFT):
-    """
-    Measurement operators built on NUFFT. Use torchkbnufft as the NUFFT package.
+    """Represent a NUFFT measurement operator backed by TorchKbNUFFT.
+
+    This class evaluates nonuniform Fourier sampling with ``torchkbnufft`` for
+    single-channel measurement operators. It reuses the weighting and
+    preconditioning logic defined in :class:`MeasOpNUFFT` while exposing the
+    backend-specific interpolation modes supported by TorchKbNUFFT.
+
+    Shape:
+        Image tensors: ``(1, 1, H, W)``.
+        Visibility-domain tensors: ``(1, 1, N)``.
+        Sampling-pattern coordinates :math:`u` and :math:`v`: ``(1, 1, N)``.
+
+    Attributes:
+        _traj (torch.Tensor): Sampling trajectory stored in TorchKbNUFFT's
+            expected layout.
+        _data_weight (torch.Tensor): Combined natural and imaging weights
+            applied in measurement space.
+        _precond_weight (torch.Tensor): Preconditioning weights applied around
+            the backend NUFFT calls.
+        _nufft_obj (torch.nn.Module): Forward TorchKbNUFFT operator.
+        _adj_nufft_obj (torch.nn.Module): Adjoint TorchKbNUFFT operator.
+        _interp_mats (tuple[torch.Tensor, ...] | None): Sparse interpolation
+            matrices for ``"matrix"`` mode, or ``None`` for ``"table"`` mode.
+
+    Example:
+        >>> import torch
+        >>> u = (2 * torch.pi) * torch.rand(1, 1, 8) - torch.pi
+        >>> v = (2 * torch.pi) * torch.rand(1, 1, 8) - torch.pi
+        >>> op = MeasOpTkbn(
+        ...     u=u,
+        ...     v=v,
+        ...     img_size=(16, 16),
+        ...     mode="table",
+        ... )
+        >>> image = torch.randn(1, 1, 16, 16)
+        >>> vis = op.forward_op(image)
+        >>> vis.shape
+        torch.Size([1, 1, 8])
     """
 
     def __init__(
@@ -28,35 +67,37 @@ class MeasOpTkbn(MeasOpNUFFT):
         mode: str = "table",
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float,
-        **kwargs
+        **kwargs: Any
     ) -> None:
-        """
-        Initialize the measurement operator.
+        """Initialise the torchkbnufft measurement operator.
 
-        :param u: The u coordinates of the sampling points in units of radians.
-        :type u: torch.Tensor
-        :param v: The v coordinates of the sampling points in units of radians.
-        :type v: torch.Tensor
-        :param img_size: The target image size.
-        :type img_size: Tuple[int, int]
-        :param natural_weight: The natural weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type natural_weight: torch.Tensor, optional
-        :param image_weight: The image weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type image_weight: torch.Tensor, optional
-        :param precond_weight:  The preconditioning weight for the measurement operator, defaults to torch.ones(1, 1)
-        :type precond_weight: torch.Tensor, optional
-        :param real_flag: Flag to indicate the image is real of complex, defaults to True
-        :type real_flag: bool, optional
-        :param grid_size: The size of the oversampled Fourier grid, defaults to None
-        :type grid_size: Tuple[int, int], optional
-        :param kernel_dim: The dimension of the Kaiser-Bessel kernel, defaults to 7
-        :type kernel_dim: int, optional
-        :param mode: The mode of the NUFFT, can be "table" or "matrix", defaults to "table"
-        :type mode: str, optional
-        :param device: The device where the measurement operator will run on, defaults to torch.device("cpu")
-        :type device: torch.device, optional
-        :param dtype: Data precision, defaults to torch.float
-        :type dtype: torch.dtype, optional
+        Args:
+            u (torch.Tensor): ``u`` sampling coordinates in radians.
+            v (torch.Tensor): ``v`` sampling coordinates in radians.
+            img_size (Tuple[int, int]): Target image size ``(H, W)``.
+            natural_weight (torch.Tensor, optional): Natural weighting tensor.
+                Default: ``torch.ones(1, 1, 1)``.
+            image_weight (torch.Tensor, optional): Imaging weighting tensor.
+                Default: ``torch.ones(1, 1, 1)``.
+            precond_weight (torch.Tensor, optional): Data-space
+                preconditioning tensor. Default: ``torch.ones(1, 1, 1)``.
+            real_flag (bool, optional): If True, keep adjoint outputs real when
+                applicable. Default: True.
+            grid_size (Tuple[int, int], optional): Oversampled Fourier-grid
+                size. If None, uses ``2 * img_size``. Default: None.
+            kernel_dim (int, optional): Kaiser-Bessel kernel support.
+                Default: 7.
+            mode (str, optional): Interpolation mode, either ``"table"`` or
+                ``"matrix"``. Default: ``"table"``.
+            device (torch.device, optional): Execution device. Default:
+                ``torch.device("cpu")``.
+            dtype (torch.dtype, optional): Image-domain dtype. Default:
+                ``torch.float``.
+            **kwargs: Reserved for API compatibility with other backends.
+
+        Raises:
+            ImportError: If ``torchkbnufft`` is unavailable.
+            NotImplementedError: If ``mode`` is unsupported.
         """
         super().__init__(
             u=u,
@@ -70,19 +111,22 @@ class MeasOpTkbn(MeasOpNUFFT):
             dtype=dtype,
         )
 
-        # import torchkbnufft here to avoid hard dependency
+        # Import lazily to avoid hard dependency when this backend is unused.
         try:
             import torchkbnufft as tkbn
         except ImportError as e:
             raise ImportError(
-                "torchkbnufft is required for MeasOpTkbn but is not installed. "
-                "Please install it via `pip install torchkbnufft` or refer to the documentation for more details."
+                "torchkbnufft is required for MeasOpTkbn but is not installed.\n"
+                "Please install it via `pip install torchkbnufft` or refer to "
+                "the documentation for more details."
             ) from e
-        
+
+        # Match the historical backend default of 2x oversampling when the
+        # caller does not provide an explicit Fourier-grid size.
         if grid_size is None:
             grid_size = tuple(np.array(self._img_size) * 2)
 
-        # forward operator
+        # Forward NUFFT operator.
         self._nufft_obj = tkbn.KbNufft(
             im_size=self._img_size,
             grid_size=grid_size,
@@ -90,7 +134,7 @@ class MeasOpTkbn(MeasOpNUFFT):
             dtype=self._dtype,
             device=self._device,
         )
-        # adjoint operator
+        # Adjoint NUFFT operator.
         self._adj_nufft_obj = tkbn.KbNufftAdjoint(
             im_size=self._img_size,
             grid_size=grid_size,
@@ -100,6 +144,7 @@ class MeasOpTkbn(MeasOpNUFFT):
         )
 
         if mode == "matrix":
+            # Precompute sparse interpolation matrices for repeated NUFFT calls.
             self._interp_mats = tkbn.calc_tensor_spmatrix(
                 self._traj.squeeze(),
                 self._img_size,
@@ -107,34 +152,42 @@ class MeasOpTkbn(MeasOpNUFFT):
                 numpoints=kernel_dim,
             )
             self._interp_mats = tuple(
-                [t.to(device=self._device, dtype=self._dtype) for t in self._interp_mats]
+                [
+                    t.to(device=self._device, dtype=self._dtype)
+                    for t in self._interp_mats
+                ]
             )
         elif mode == "table":
+            # Use TorchKbNUFFT's built-in table-based interpolation path.
             self._interp_mats = None
         else:
             raise NotImplementedError("Unrecognised mode: " + mode)
 
     def _GA(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward NUFFT with data weight
+        """Apply forward TKBNUFFT and data weighting.
 
-        :param x: The input tensor in the image domain.
-        :type x: torch.Tensor
-        :return: The result of the forward NUFFT operation.
-        :rtype: torch.Tensor
+        Args:
+            x (torch.Tensor): Image-domain input tensor.
+
+        Returns:
+            torch.Tensor: Weighted measurement-domain tensor.
         """
         return (
-            self._nufft_obj(x.to(self._dtype_meas), self._traj, interp_mats=self._interp_mats)
+            self._nufft_obj(
+                x.to(self._dtype_meas), self._traj, interp_mats=self._interp_mats
+            )
             * self._data_weight
         )
 
     def _AtGt(self, y: torch.Tensor) -> torch.Tensor:
-        """
-        Adjoint NUFFT with data weight.
+        """Apply adjoint TKBNUFFT and data weighting.
 
-        :param y: The input tensor in the Fourier domain.
-        :type y: torch.Tensor
-        :return: The result of the adjoint NUFFT operation.
-        :rtype: torch.Tensor
+        Args:
+            y (torch.Tensor): Measurement-domain input tensor.
+
+        Returns:
+            torch.Tensor: Image-domain adjoint output tensor.
         """
-        return self._adj_nufft_obj(y * self._data_weight, self._traj, interp_mats=self._interp_mats)
+        return self._adj_nufft_obj(
+            y * self._data_weight, self._traj, interp_mats=self._interp_mats
+        )
