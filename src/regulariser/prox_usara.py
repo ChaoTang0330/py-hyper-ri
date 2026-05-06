@@ -1,7 +1,7 @@
 """Implement the uSARA positivity-constrained proximal operator.
 
 This file provides a dual forward-backward proximal step combining weighted
-wavelet :math:`\ell_1` sparsity with positivity projection.
+wavelet :math:`\\ell_1` sparsity with positivity projection.
 """
 
 from typing import Tuple, List, Union, Optional
@@ -170,14 +170,14 @@ class ProxSARAPos(Regulariser):
         assert (
             sfth_val.numel() == rank_num_ch or sfth_val.numel() == 1
         ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
-        self._sfth_val = sfth_val.reshape(1, -1, 1, 1).to(
+        self._sfth_val = sfth_val.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )
         self._dec_lev = dec_lev
         assert (
             wl_noise_floor.numel() == rank_num_ch or wl_noise_floor.numel() == 1
         ), "Noise floor level must be a scalar or a vector with one value per channel."
-        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1, 1).to(
+        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )
         self._mode = mode
@@ -185,58 +185,93 @@ class ProxSARAPos(Regulariser):
         self._wl_dict = list(wl_dict)
         self._dirac = "dirac" in self._wl_dict
         self._verbose = verbose
-        self._weights = []
+        self._weights = torch.ones(1, device=self._device, dtype=self._dtype)
         self._norm_l1 = torch.zeros(1, device=self._device, dtype=self._dtype)
         self._max_iter = max_iter
         self._obj_tol = obj_tol
         if self._dirac:
             self._wl_dict.remove("dirac")
 
-        # Initialise the dual variables with the coefficient structure induced
-        # by the configured wavelet dictionary.
-        self._dual = self._wavedec2_dict(
-            torch.zeros(
-                (1, self._rank_num_ch, *self._img_size),
-                device=self._device,
-                dtype=self._dtype,
-            )
-        )
-        # Initialise the reweighting coefficients to ones with zero image cube.
-        self.update(
-            torch.zeros(
-                (1, self._rank_num_ch, *self._img_size),
-                device=self._device,
-                dtype=self._dtype,
-            )
+        # Initialise dual variable and coefficient indexing metadata.
+        self._dual = None
+        # List of coefficient shapes
+        self._dual_shape = []
+        # List of (start, end) index tuples for each coefficient
+        self._dual_slices = []
+        self._init_dual()
+
+    def _init_dual(self) -> None:
+        """Initialise packed dual variables and coefficient metadata."""
+        x0 = torch.zeros(
+            (1, self._rank_num_ch, *self._img_size),
+            device=self._device,
+            dtype=self._dtype,
         )
 
-    def _wavedec2_dict(self, x: torch.Tensor) -> WaveletDictCoeff:
-        """Decompose input tensors with the configured wavelet dictionary.
+        idx_start = 0
+        for basis in self._wl_dict:
+            coeff = ptwt.wavedec2(x0, basis, level=self._dec_lev, mode=self._mode)
+
+            basis_shapes = []
+            basis_slices = []
+
+            # Approximation coefficients
+            approx_shape = coeff[0][0, 0].shape
+            approx_numel = coeff[0][0, 0].numel()
+            basis_shapes.append(approx_shape)
+            basis_slices.append((idx_start, idx_start + approx_numel))
+            idx_start += approx_numel
+
+            # Detail coefficients per level
+            for j in range(1, self._dec_lev + 1):
+                level_shapes = []
+                level_slices = []
+                for k in range(3):
+                    detail_shape = coeff[j][k][0, 0].shape
+                    detail_numel = coeff[j][k][0, 0].numel()
+                    level_shapes.append(detail_shape)
+                    level_slices.append((idx_start, idx_start + detail_numel))
+                    idx_start += detail_numel
+                basis_shapes.append(level_shapes)
+                basis_slices.append(level_slices)
+
+            self._dual_shape.append(basis_shapes)
+            self._dual_slices.append(basis_slices)
+
+        if self._dirac:
+            dirac_shape = x0[0, 0].shape
+            dirac_numel = x0[0, 0].numel()
+            self._dual_shape.append([dirac_shape])
+            self._dual_slices.append([(idx_start, idx_start + dirac_numel)])
+
+        self._dual = self._wavedec2_dict(x0)
+
+    def _wavedec2_dict(self, x: torch.Tensor) -> torch.Tensor:
+        """Pack wavelet coefficients from all bases into one tensor.
 
         Args:
             x (torch.Tensor): Input tensor with shape ``(1, C, H, W)``.
 
         Returns:
-            WaveletDictCoeff: Structured wavelet coefficients for each basis.
+            torch.Tensor: Packed coefficient tensor with shape ``(1, C, N)``.
         """
-        coeff: WaveletDictCoeff = []
+        coeff_list: List[torch.Tensor] = []
         for basis in self._wl_dict:
-            curr_coeff = list(
-                ptwt.wavedec2(
-                    x / self._scale_factor, basis, level=self._dec_lev, mode=self._mode
-                )
-            )
-            coeff.append(curr_coeff)
+            curr_coeff = ptwt.wavedec2(x, basis, level=self._dec_lev, mode=self._mode)
+            coeff_list.append(curr_coeff[0].flatten(start_dim=2))
+            for j in range(1, self._dec_lev + 1):
+                for k in range(3):
+                    coeff_list.append(curr_coeff[j][k].flatten(start_dim=2))
         if self._dirac:
-            coeff.append(x / self._scale_factor)
-        return coeff
+            coeff_list.append(x.flatten(start_dim=2))
 
-    def _waverec2_dict(self, y: WaveletDictCoeff) -> torch.Tensor:
-        """Reconstruct tensors from dictionary wavelet coefficients.
+        return torch.cat(coeff_list, dim=2) / self._scale_factor
+
+    def _waverec2_dict(self, y: torch.Tensor) -> torch.Tensor:
+        """Reconstruct tensors from packed wavelet coefficients.
 
         Args:
-            y (WaveletDictCoeff): Coefficients generated by
-                :meth:`_wavedec2_dict`.
+            y (torch.Tensor): Packed coefficient tensor with shape ``(1, C, N)``.
 
         Returns:
             torch.Tensor: Reconstructed tensor with shape ``(1, C, H, W)``.
@@ -248,14 +283,44 @@ class ProxSARAPos(Regulariser):
             device=self._device,
             dtype=self._dtype,
         )
-        for i, basis in enumerate(self._wl_dict):
-            result += ptwt.waverec2(y[i], basis) / self._scale_factor
+
+        for basis_idx, basis in enumerate(self._wl_dict):
+            # Extract approximation coefficients
+            approx_start, approx_end = self._dual_slices[basis_idx][0]
+            approx_shape = self._dual_shape[basis_idx][0]
+            approx = y[:, :, approx_start:approx_end].reshape(
+                1, self._rank_num_ch, *approx_shape
+            )
+
+            # Reconstruct nested list: [approx, (cH1, cV1, cD1), (cH2, cV2, cD2), ...]
+            reconstructed = [approx]
+            for level_idx in range(1, self._dec_lev + 1):
+                details_tuple = []
+                for subband_idx in range(3):
+                    detail_start, detail_end = self._dual_slices[basis_idx][level_idx][
+                        subband_idx
+                    ]
+                    detail_shape = self._dual_shape[basis_idx][level_idx][subband_idx]
+                    detail = y[:, :, detail_start:detail_end].reshape(
+                        1, self._rank_num_ch, *detail_shape
+                    )
+                    details_tuple.append(detail)
+                reconstructed.append(tuple(details_tuple))
+
+            result += ptwt.waverec2(reconstructed, basis)
+
         if self._dirac:
-            result += y[-1] / self._scale_factor
-        return result
+            dirac_start, dirac_end = self._dual_slices[-1][0]
+            dirac_shape = self._dual_shape[-1][0]
+            dirac = y[:, :, dirac_start:dirac_end].reshape(
+                1, self._rank_num_ch, *dirac_shape
+            )
+            result += dirac
+
+        return result / self._scale_factor
 
     def _prox_l1_adj(self, z: torch.Tensor, sfth: torch.Tensor) -> torch.Tensor:
-        """Apply the proximal map of the adjoint :math:`\ell_1` norm.
+        """Apply the proximal map of the adjoint :math:`\\ell_1` norm.
 
         Args:
             z (torch.Tensor): Input coefficient tensor.
@@ -271,53 +336,6 @@ class ProxSARAPos(Regulariser):
                 torch.tensor(0.0, device=self._device, dtype=self._dtype),
             )
         )
-
-    def _sfth_dual(self, psit_img: WaveletDictCoeff) -> None:
-        """Threshold coefficients and update dual variables.
-
-        Args:
-            psit_img (WaveletDictCoeff): Wavelet coefficients of the current
-                primal iterate.
-
-        Notes:
-            This method updates ``self._dual`` in place and refreshes
-            ``self._norm_l1`` for the stopping criterion.
-        """
-        norm_l1_ch = torch.zeros(
-            1, self._rank_num_ch, 1, 1, device=self._device, dtype=self._dtype
-        )
-        for i in range(len(self._wl_dict)):
-            self._dual[i][0] = self._prox_l1_adj(
-                self._dual[i][0] + psit_img[i][0], self._sfth_val * self._weights[i][0]
-            )
-            norm_l1_ch += torch.sum(
-                torch.abs(psit_img[i][0] * self._weights[i][0]),
-                dim=(2, 3),
-                keepdim=True,
-            )
-            for j in range(1, self._dec_lev + 1):
-                self._dual[i][j] = tuple(
-                    self._prox_l1_adj(
-                        self._dual[i][j][k] + psit_img[i][j][k],
-                        self._sfth_val * self._weights[i][j][k],
-                    )
-                    for k in range(3)
-                )
-                for k in range(3):
-                    norm_l1_ch += torch.sum(
-                        torch.abs(psit_img[i][j][k] * self._weights[i][j][k]),
-                        dim=(2, 3),
-                        keepdim=True,
-                    )
-        if self._dirac:
-            self._dual[-1] = self._prox_l1_adj(
-                self._dual[-1] + psit_img[-1], self._sfth_val * self._weights[-1]
-            )
-            norm_l1_ch += torch.sum(
-                torch.abs(psit_img[-1] * self._weights[-1]), dim=(2, 3), keepdim=True
-            )
-
-        self._norm_l1 = torch.sum(norm_l1_ch * self._sfth_val)
 
     @torch.no_grad()
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
@@ -347,13 +365,15 @@ class ProxSARAPos(Regulariser):
                 ),
             )
             norm_l2_2 = torch.sum((result - x) ** 2)
-            # Dual update (weighted wavelet soft-thresholding).
-            self._sfth_dual(self._wavedec2_dict(result))
-            # Objective-based stopping criterion.
+            # Dual update stage 1: compute wavelet coefficients of current iterate
+            psit_img = self._wavedec2_dict(result)
+            self._norm_l1 = torch.sum(torch.abs(psit_img * self._weights) * self._sfth_val)
+
+            # Aggregate objective terms across distributed ranks.
             if self._is_dist:
-                # Aggregate objective terms across distributed ranks.
                 dist.all_reduce(norm_l2_2, op=dist.ReduceOp.SUM)
                 dist.all_reduce(self._norm_l1, op=dist.ReduceOp.SUM)
+            # Objective-based stopping criterion.
             obj_val = 0.5 * norm_l2_2.item() + self._norm_l1.item()
             obj_rel_var = abs(obj_val - obj_val_prev) / max(abs(obj_val), 1e-12)
             obj_val_prev = obj_val
@@ -365,6 +385,11 @@ class ProxSARAPos(Regulariser):
                 )
             if obj_rel_var < self._obj_tol:
                 break
+
+            # Dual update stage 2: ascent step followed by l1 shrinkage.
+            self._dual = self._dual + psit_img
+            self._dual = self._prox_l1_adj(self._dual, self._sfth_val * self._weights)
+
         if self._verbose and self._rank == 0:
             print(
                 f"  Prox converged: Iter {i+1}, rel_fval = {obj_rel_var:.3e},",
@@ -384,33 +409,12 @@ class ProxSARAPos(Regulariser):
             Reweighting is computed independently for each wavelet basis and,
             when enabled, for the Dirac component.
         """
-        self._weights = []
-
         x = x.to(self._dtype).to(self._device)
-        for basis in self._wl_dict:
-            curr_coeff = ptwt.wavedec2(
-                x / self._scale_factor, basis, level=self._dec_lev, mode=self._mode
-            )
-            weighting_i = [
-                self._wl_noise_floor / (self._wl_noise_floor + torch.abs(curr_coeff[0]))
-            ]
-            for i in range(1, self._dec_lev + 1):
-                weighting_i.append(
-                    tuple(
-                        self._wl_noise_floor
-                        / (self._wl_noise_floor + torch.abs(curr_coeff[i][j]))
-                        for j in range(3)
-                    )
-                )
-            self._weights.append(weighting_i)
-        if self._dirac:
-            self._weights.append(
-                self._wl_noise_floor
-                / (self._wl_noise_floor + torch.abs(x / self._scale_factor))
-            )
+        psit_x = self._wavedec2_dict(x)
+        self._weights = self._wl_noise_floor / (self._wl_noise_floor + psit_x.abs())
 
     def get_l1_norm(self) -> float:
-        """Return the latest weighted :math:`\ell_1` norm value.
+        """Return the latest weighted :math:`\\ell_1` norm value.
 
         Returns:
             float: Last objective regularisation term.
@@ -432,7 +436,7 @@ class ProxSARAPos(Regulariser):
         assert (
             wl_noise_floor.numel() == self._rank_num_ch or wl_noise_floor.numel() == 1
         ), "Noise floor level must be a scalar or a vector with one value per channel."
-        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1, 1).to(
+        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )
 
@@ -449,6 +453,6 @@ class ProxSARAPos(Regulariser):
         assert (
             sfth_val.numel() == self._rank_num_ch or sfth_val.numel() == 1
         ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
-        self._sfth_val = sfth_val.reshape(1, -1, 1, 1).to(
+        self._sfth_val = sfth_val.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )
