@@ -191,10 +191,11 @@ class ProxHyperSARAPos(Regulariser):
         if self._dirac:
             self._wl_dict.remove("dirac")
 
-        # Initialise packed dual variables and coefficient indexing metadata.
-        self._dual = []
-        self._dual_numel_ch = 0
+        # Initialise dual variable and coefficient indexing metadata.
+        self._dual = None
+        # List of coefficient shapes
         self._dual_shape = []
+        # List of (start, end) index tuples for each coefficient
         self._dual_slices = []
         self._init_dual()
 
@@ -218,7 +219,6 @@ class ProxHyperSARAPos(Regulariser):
             approx_numel = coeff[0][0, 0].numel()
             basis_shapes.append(approx_shape)
             basis_slices.append((idx_start, idx_start + approx_numel))
-            self._dual_numel_ch += approx_numel
             idx_start += approx_numel
 
             # Detail coefficients per level
@@ -230,7 +230,6 @@ class ProxHyperSARAPos(Regulariser):
                     detail_numel = coeff[j][k][0, 0].numel()
                     level_shapes.append(detail_shape)
                     level_slices.append((idx_start, idx_start + detail_numel))
-                    self._dual_numel_ch += detail_numel
                     idx_start += detail_numel
                 basis_shapes.append(level_shapes)
                 basis_slices.append(level_slices)
@@ -242,7 +241,6 @@ class ProxHyperSARAPos(Regulariser):
             dirac_shape = x0[0, 0].shape
             dirac_numel = x0[0, 0].numel()
             self._dual_shape.append([dirac_shape])
-            self._dual_numel_ch += dirac_numel
             self._dual_slices.append([(idx_start, idx_start + dirac_numel)])
 
         self._dual = self._wavedec2_dict(x0)
@@ -333,8 +331,7 @@ class ProxHyperSARAPos(Regulariser):
         # Compute joint-channel l2 norms coefficient-wise.
         z_l2 = torch.sum(z**2, dim=1, keepdim=True)
         if self._is_dist:
-            dist.all_reduce(z_l2.to(self._dist_device), op=dist.ReduceOp.SUM)
-            z_l2 = z_l2.to(self._device)
+            dist.all_reduce(z_l2, op=dist.ReduceOp.SUM)
         z_l2 = torch.sqrt(z_l2)
         # Apply l2 shrinkage induced by the adjoint l2,1 proximal map.
         z_l2_sfth = torch.maximum(
@@ -359,7 +356,8 @@ class ProxHyperSARAPos(Regulariser):
             :math:`\ell_{2,1}` shrinkage, and synchronises channel-norm terms
             across distributed ranks when needed.
         """
-        # Dual forward-backward iterations with objective-based stopping.
+        # Dual forward-backward iterations: primal positivity projection and
+        # dual weighted-thresholding updates.
         obj_val_prev = 0
         for i in range(self._max_iter):
             # Primal update (positivity projection).
@@ -372,20 +370,16 @@ class ProxHyperSARAPos(Regulariser):
                 ),
             )
             norm_l2_2 = torch.sum((result - x) ** 2)
-            # Dual update stage 1: analyse the current primal iterate.
+            # Dual update stage 1: compute wavelet coefficients of current iterate
             psit_img = self._wavedec2_dict(result)
             psit_img_l2 = torch.sum(psit_img**2, dim=1, keepdim=True)
 
             # Compute objective and stopping criterion.
             if self._is_dist:
-                norm_l2_2 = norm_l2_2.to(self._dist_device)
-                psit_img_l2 = psit_img_l2.to(self._dist_device)
                 dist.all_reduce(norm_l2_2, op=dist.ReduceOp.SUM)
                 dist.all_reduce(psit_img_l2, op=dist.ReduceOp.SUM)
-                norm_l2_2 = norm_l2_2.to(self._device)
-                psit_img_l2 = psit_img_l2.to(self._device)
-            self._norm_l21 = torch.sum(
-                torch.sqrt(psit_img_l2) * self._sfth_val * self._weights
+            self._norm_l21 = (
+                torch.sum(torch.sqrt(psit_img_l2) * self._weights) * self._sfth_val
             )
             obj_val = 0.5 * norm_l2_2.item() + self._norm_l21.item()
             obj_rel_var = abs(obj_val - obj_val_prev) / max(abs(obj_val), 1e-12)
@@ -428,9 +422,7 @@ class ProxHyperSARAPos(Regulariser):
         psit_x = self._wavedec2_dict(x)
         psit_x_l2 = torch.sum(psit_x**2, dim=1, keepdim=True)
         if self._is_dist:
-            psit_x_l2 = psit_x_l2.to(self._dist_device)
             dist.all_reduce(psit_x_l2, op=dist.ReduceOp.SUM)
-            psit_x_l2 = psit_x_l2.to(self._device)
         psit_x_l2 = torch.sqrt(psit_x_l2)
         self._weights = self._wl_noise_floor / (self._wl_noise_floor + psit_x_l2)
 

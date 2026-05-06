@@ -466,7 +466,7 @@ def set_imaging_params_ri(
             + "_"
         )
     param_optimiser["run_id"] = param_general.get("run_id", None)
-    if param_optimiser["run_id"] is not None:
+    if param_optimiser["run_id"] not in [None, "", []]:
         file_prefix += "runID_" + str(param_optimiser["run_id"]) + "_"
     param_optimiser["file_prefix"] = file_prefix
 
