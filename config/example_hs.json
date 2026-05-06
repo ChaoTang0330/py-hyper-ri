@@ -61,7 +61,7 @@
         },
         "airi_default": {
             "denoiser_comment_2": "airi default params",
-            "approx_meas_op": true,
+            "approx_meas_op": false,
             "im_min_itr": 100,
             "im_max_itr": 3000,
             "im_var_tol": 1e-5,
@@ -96,7 +96,7 @@
         },
         "usara_default": {
             "denoiser_comment_2": "usara default params",
-            "approx_meas_op": true,
+            "approx_meas_op": false,
             "im_min_itr": 20,
             "im_max_itr": 2000,
             "im_max_outer_itr": 20,
@@ -137,7 +137,7 @@
         },
         "hyper-usara_default": {
             "denoiser_comment_2": "hyper-usara default params",
-            "approx_meas_op": true,
+            "approx_meas_op": false,
             "im_min_itr": 20,
             "im_max_itr": 2000,
             "im_max_outer_itr": 20,
