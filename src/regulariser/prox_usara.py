@@ -104,8 +104,8 @@ class ProxSARAPos(Regulariser):
         ),
         dec_lev: int = 4,
         mode: str = "zero",
-        sfth_val: Optional[torch.Tensor] = None,
-        wl_noise_floor: Optional[torch.Tensor] = None,
+        sfth_val: torch.Tensor = torch.tensor(1e-4),
+        wl_noise_floor: torch.Tensor = torch.tensor(1e-4),
         max_iter: int = 20,
         obj_tol: float = 1e-4,
         device: torch.device = torch.device("cpu"),
@@ -126,10 +126,12 @@ class ProxSARAPos(Regulariser):
             dec_lev (int, optional): Wavelet decomposition depth. Default: 4.
             mode (str, optional): Boundary mode for wavelet transforms.
                 Default: "zero".
-            sfth_val (Optional[torch.Tensor], optional): Soft-thresholding level
-                per channel. Default: None.
-            wl_noise_floor (Optional[torch.Tensor], optional): Reweighting noise
-                floor per channel. Default: None.
+            sfth_val (torch.Tensor): Soft-thresholding value per channel.
+                It should have a number of elements equals to the number of
+                channels or equals to 1. Default: torch.tensor(1e-4).
+            wl_noise_floor (torch.Tensor): Reweighting noise floor per channel.
+                It should have a number of elements equals to the number of
+                channels or equals to 1. Default: torch.tensor(1e-4).
             max_iter (int, optional): Maximum dual forward-backward iterations.
                 Default: 20.
             obj_tol (float, optional): Relative objective tolerance used for
@@ -140,8 +142,21 @@ class ProxSARAPos(Regulariser):
                 Default: torch.float.
             verbose (Union[bool, int], optional): Verbosity level. Default:
                 True.
+
+        Raises:
+            AssertionError: If the wavelet dictionary is empty or contains
+                unsupported bases.
+            AssertionError: If the soft-thresholding value is not a scalar
+                or a vector with one value per channel.
+            AssertionError: If the noise floor level is not a scalar
+                or a vector with one value per channel.
         """
-        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
+        super().__init__(
+            rank_num_ch=rank_num_ch,
+            rank_ch_start=rank_ch_start,
+            device=device,
+            dtype=dtype,
+        )
 
         assert wl_dict, "Wavelet dictionary cannot be empty."
         for basis in wl_dict:
@@ -152,18 +167,26 @@ class ProxSARAPos(Regulariser):
 
         self._img_size = img_size
         self._rank_num_ch = rank_num_ch
-        self._sfth_val = sfth_val
+        assert (
+            sfth_val.numel() == rank_num_ch or sfth_val.numel() == 1
+        ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
+        self._sfth_val = sfth_val.reshape(1, -1, 1, 1).to(
+            device=self._device, dtype=self._dtype
+        )
         self._dec_lev = dec_lev
-        self._wl_noise_floor = wl_noise_floor
+        assert (
+            wl_noise_floor.numel() == rank_num_ch or wl_noise_floor.numel() == 1
+        ), "Noise floor level must be a scalar or a vector with one value per channel."
+        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1, 1).to(
+            device=self._device, dtype=self._dtype
+        )
         self._mode = mode
         self._scale_factor = math.sqrt(len(wl_dict))
         self._wl_dict = list(wl_dict)
         self._dirac = "dirac" in self._wl_dict
         self._verbose = verbose
         self._weights = []
-        self._norm_l1 = torch.zeros(
-            1, device=self._device, dtype=self._dtype
-        )
+        self._norm_l1 = torch.zeros(1, device=self._device, dtype=self._dtype)
         self._max_iter = max_iter
         self._obj_tol = obj_tol
         if self._dirac:
@@ -293,7 +316,7 @@ class ProxSARAPos(Regulariser):
             norm_l1_ch += torch.sum(
                 torch.abs(psit_img[-1] * self._weights[-1]), dim=(2, 3), keepdim=True
             )
-        
+
         self._norm_l1 = torch.sum(norm_l1_ch * self._sfth_val)
 
     @torch.no_grad()
@@ -400,8 +423,16 @@ class ProxSARAPos(Regulariser):
         Args:
             wl_noise_floor (torch.Tensor): Per-channel noise-floor in the
                 wavelet coefficients.
+
+        Raises:
+            AssertionError: If the noise floor level is not a scalar or a
+                vector with one value per channel.
+
         """
-        self._wl_noise_floor = wl_noise_floor.reshape(1, self._rank_num_ch, 1, 1).to(
+        assert (
+            wl_noise_floor.numel() == self._rank_num_ch or wl_noise_floor.numel() == 1
+        ), "Noise floor level must be a scalar or a vector with one value per channel."
+        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1, 1).to(
             device=self._device, dtype=self._dtype
         )
 
@@ -410,7 +441,14 @@ class ProxSARAPos(Regulariser):
 
         Args:
             sfth_val (torch.Tensor): Per-channel threshold tensor.
+
+        Raises:
+            AssertionError: If the soft-thresholding value is not a scalar or a
+                vector with one value per channel.
         """
-        self._sfth_val = sfth_val.reshape(1, self._rank_num_ch, 1, 1).to(
+        assert (
+            sfth_val.numel() == self._rank_num_ch or sfth_val.numel() == 1
+        ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
+        self._sfth_val = sfth_val.reshape(1, -1, 1, 1).to(
             device=self._device, dtype=self._dtype
         )

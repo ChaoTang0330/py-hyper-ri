@@ -103,8 +103,8 @@ class ProxHyperSARAPos(Regulariser):
         ),
         dec_lev: int = 4,
         mode: str = "zero",
-        sfth_val: Optional[torch.Tensor] = None,
-        wl_noise_floor: Optional[torch.Tensor] = None,
+        sfth_val: torch.Tensor = torch.tensor(1e-4),
+        wl_noise_floor: torch.Tensor = torch.tensor(1e-4),
         max_iter: int = 20,
         obj_tol: float = 1e-4,
         device: torch.device = torch.device("cpu"),
@@ -125,10 +125,10 @@ class ProxHyperSARAPos(Regulariser):
             dec_lev (int, optional): Wavelet decomposition depth. Default: 4.
             mode (str, optional): Boundary mode for wavelet transforms.
                 Default: "zero".
-            sfth_val (Optional[torch.Tensor], optional): Scalar soft-threshold
-                level. Default: None.
-            wl_noise_floor (Optional[torch.Tensor], optional): Scalar
-                reweighting noise floor. Default: None.
+            sfth_val (torch.Tensor, optional): Soft-thresholding velue in the
+                :math:`\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
+            wl_noise_floor (torch.Tensor, optional): Noise floor level in the
+                :math:`\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
             max_iter (int, optional): Maximum dual forward-backward iterations.
                 Default: 20.
             obj_tol (float, optional): Relative objective tolerance used for
@@ -140,10 +140,11 @@ class ProxHyperSARAPos(Regulariser):
             verbose (Union[bool, int], optional): Verbosity level. Default:
                 True.
 
-        Notes:
-            Hyper-uSARA uses scalar threshold and noise-floor parameters shared
-            across channels; therefore ``sfth_val`` and ``wl_noise_floor`` are
-            required to be scalars.
+        Raises:
+            AssertionError: If the wavelet dictionary is empty or contains
+                unsupported bases.
+            AssertionError: If the soft-thresholding value is not a scalar.
+            AssertionError: If the noise floor level is not a scalar.
         """
         super().__init__(
             rank_num_ch=rank_num_ch,
@@ -446,6 +447,9 @@ class ProxHyperSARAPos(Regulariser):
 
         Args:
             wl_noise_floor (torch.Tensor): Scalar noise-floor tensor.
+
+        Raises:
+            AssertionError: If the noise floor level is not a scalar.
         """
         assert (
             wl_noise_floor.numel() == 1
@@ -459,6 +463,9 @@ class ProxHyperSARAPos(Regulariser):
 
         Args:
             sfth_val (torch.Tensor): Scalar threshold tensor.
+
+        Raises:
+            AssertionError: If the soft-thresholding value is not a scalar.
         """
         assert (
             sfth_val.numel() == 1
