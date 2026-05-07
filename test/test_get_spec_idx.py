@@ -3,7 +3,7 @@ Unit tests for get_spec_idx in spectral_index utilities.
 """
 import numpy as np
 
-from src.interface.spectral_index import get_spec_idx
+from src.hyri.interface.spectral_index import get_spec_idx
 
 
 def _make_power_law_cube(

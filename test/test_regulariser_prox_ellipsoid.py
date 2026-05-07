@@ -2,7 +2,7 @@
 
 import torch
 
-from src.regulariser.prox_ellipsoid import ProxEllipsoid
+from src.hyri.regulariser.prox_ellipsoid import ProxEllipsoid
 
 from .regulariser_helpers import make_measurement_center_like, make_measurement_list
 

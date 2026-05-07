@@ -5,7 +5,7 @@ Unit tests for imaging weight generation utilities.
 import numpy as np
 import torch
 
-from src.interface.gen_imaging_weights import gen_imaging_weights, gen_imaging_weights_np
+from src.hyri.interface.gen_imaging_weights import gen_imaging_weights, gen_imaging_weights_np
 
 
 def _sample_uvn() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

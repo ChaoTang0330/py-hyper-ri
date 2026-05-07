@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.interface.io import parsing_parameters
+from src.hyri.interface.io import parsing_parameters
 
 
 def _write_config(tmp_path: Path, algorithm: str = "airi") -> Path:

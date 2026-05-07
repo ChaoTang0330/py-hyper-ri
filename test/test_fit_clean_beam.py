@@ -5,7 +5,7 @@ Unit tests for fit_clean_beam in spectral_index utilities.
 import numpy as np
 import pytest
 
-from src.interface.spectral_index import fit_clean_beam, gaussian2D
+from src.hyri.interface.spectral_index import fit_clean_beam, gaussian2D
 
 
 def _make_synthetic_psf(

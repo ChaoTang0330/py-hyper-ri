@@ -2,7 +2,7 @@
 
 import torch
 
-from src.regulariser.den_airi import DenAIRI
+from src.hyri.regulariser.den_airi import DenAIRI
 
 from .regulariser_helpers import (
     make_image_tensor,

@@ -4,11 +4,9 @@ Unit tests for set_imaging_params_ri in imaging parameter utilities.
 
 from pathlib import Path
 
-import pytest
 import torch
 
-import src.interface.imaging_param as imaging_param_module
-from src.interface.imaging_param import set_imaging_params_ri
+from src.hyri.interface.imaging_param import set_imaging_params_ri
 
 
 def _base_param_general() -> dict:

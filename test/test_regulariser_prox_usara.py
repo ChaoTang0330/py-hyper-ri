@@ -2,7 +2,7 @@
 
 import torch
 
-from src.regulariser.prox_usara import ProxSARAPos
+from src.hyri.regulariser.prox_usara import ProxSARAPos
 
 from .regulariser_helpers import make_image_tensor, make_positive_threshold
 

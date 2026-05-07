@@ -2,7 +2,7 @@
 
 import torch
 
-from src.measurement_operator import MeasOpPSF
+from src.hyri.measurement_operator import MeasOpPSF
 
 from .meas_op_helpers import create_random_uv, create_test_image
 from .test_meas_op_finufft import build_finufft_op

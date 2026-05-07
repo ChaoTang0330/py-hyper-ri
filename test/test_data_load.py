@@ -1,13 +1,13 @@
 """
 Unit tests for the data loading functionality of
-src.interface.load_data.load_data_to_tensor
+src.hyri.interface.load_data.load_data_to_tensor
 """
 
 import os
 
 import torch
 
-from src.interface.load_data import load_data_to_tensor
+from src.hyri.interface.load_data import load_data_to_tensor
 
 TEST_MEAS_PATH = os.path.join(
     os.path.dirname(__file__), "data", "3c353_sim_vla_meas_hs"
