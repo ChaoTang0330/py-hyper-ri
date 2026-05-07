@@ -240,7 +240,7 @@ class PrimalDualPrecond(Optimiser):
 
     @torch.no_grad()
     def _calculate_channel_wise_heuristic(self) -> None:
-        """Calculate channel-wise heuristic noise levels.
+        r"""Calculate channel-wise heuristic noise levels.
 
         The base heuristic is defined as
 

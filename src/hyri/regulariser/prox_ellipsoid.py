@@ -1,7 +1,7 @@
 """Implement projection onto weighted ellipsoidal constraint sets.
 
 This file provides the proximal operator used by constrained optimisation
-variants that require projection onto per-channel weighted :math:`\ell_2` balls.
+variants that require projection onto per-channel weighted :math:`\\ell_2` balls.
 """
 
 import math
@@ -136,7 +136,7 @@ class ProxEllipsoid(Regulariser):
         self._precond_weight = tuple(precond_weight)
         if radius is None:
             # The theoretical l2 error bounds are used as the default radius of
-            # the :math:`\ell_2` ball, assume chi-square distribution and tau=1
+            # the \ell_2 ball, assume chi-square distribution and tau=1
             radius = torch.tensor(
                 [
                     math.sqrt(torch.numel(c) + 2.0 * math.sqrt(torch.numel(c)))

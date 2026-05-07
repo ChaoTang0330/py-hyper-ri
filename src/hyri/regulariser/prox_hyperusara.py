@@ -1,7 +1,7 @@
 """Implement the Hyper-uSARA positivity-constrained proximal operator.
 
 This file provides a dual forward-backward proximal step combining weighted
-joint-channel :math:`\ell_{2,1}` wavelet sparsity with positivity projection.
+joint-channel :math:`\\ell_{2,1}` wavelet sparsity with positivity projection.
 """
 
 import math
@@ -128,9 +128,9 @@ class ProxHyperSARAPos(Regulariser):
             mode (str, optional): Boundary mode for wavelet transforms.
                 Default: "zero".
             sfth_val (torch.Tensor, optional): Soft-thresholding velue in the
-                :math:`\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
+                :math:`\\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
             wl_noise_floor (torch.Tensor, optional): Noise floor level in the
-                :math:`\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
+                :math:`\\ell_{2}`-norm wavelet domain. Default: torch.tensor(1e-4).
             max_iter (int, optional): Maximum dual forward-backward iterations.
                 Default: 20.
             obj_tol (float, optional): Relative objective tolerance used for
@@ -321,7 +321,7 @@ class ProxHyperSARAPos(Regulariser):
         return result / self._scale_factor
 
     def _prox_l21_adj(self, z: torch.Tensor, sfth: torch.Tensor) -> torch.Tensor:
-        """Apply the proximal map of the adjoint :math:`\ell_{2,1}` norm.
+        """Apply the proximal map of the adjoint :math:`\\ell_{2,1}` norm.
 
         Args:
             z (torch.Tensor): Input packed coefficients.
@@ -355,7 +355,7 @@ class ProxHyperSARAPos(Regulariser):
 
         Notes:
             This method uses a dual forward-backward loop with joint-channel
-            :math:`\ell_{2,1}` shrinkage, and synchronises channel-norm terms
+            :math:`\\ell_{2,1}` shrinkage, and synchronises channel-norm terms
             across distributed ranks when needed.
         """
         # Dual forward-backward iterations: primal positivity projection and
@@ -417,7 +417,7 @@ class ProxHyperSARAPos(Regulariser):
                 weights.
 
         Notes:
-            The :math:`\ell_2` coefficient norms are aggregated across ranks in
+            The :math:`\\ell_2` coefficient norms are aggregated across ranks in
             distributed execution before updating the shared weights.
         """
 
@@ -430,7 +430,7 @@ class ProxHyperSARAPos(Regulariser):
         self._weights = self._wl_noise_floor / (self._wl_noise_floor + psit_x_l2)
 
     def get_l21_norm(self) -> float:
-        """Return the latest weighted :math:`\ell_{2,1}` norm value.
+        """Return the latest weighted :math:`\\ell_{2,1}` norm value.
 
         Returns:
             float: Last objective regularisation term.
