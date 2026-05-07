@@ -6,13 +6,14 @@ selection driven by heuristic noise and peak-intensity estimates.
 
 import csv
 import os
-from typing import Optional, Tuple
 
 import torch
 from onnx2torch import convert
 
-from .regulariser import Regulariser
 from ..interface.io import resolve_existing_file_path
+from .regulariser import Regulariser
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 class DenAIRI(Regulariser):
@@ -74,7 +75,7 @@ class DenAIRI(Regulariser):
         rand_trans: bool = True,
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
     ) -> None:
@@ -99,7 +100,12 @@ class DenAIRI(Regulariser):
                 shelf cannot be found.
             RuntimeError: If the denoiser shelf CSV contains no usable entries.
         """
-        super().__init__(rank_num_ch=rank_num_ch, rank_ch_start=rank_ch_start, device=device, dtype=dtype)
+        super().__init__(
+            rank_num_ch=rank_num_ch,
+            rank_ch_start=rank_ch_start,
+            device=device,
+            dtype=dtype,
+        )
 
         self._rand_trans = rand_trans
         self._net_scaling = 1.0
@@ -119,9 +125,7 @@ class DenAIRI(Regulariser):
             shelf_reader = csv.reader(shelf_file, delimiter=",")
             for row in shelf_reader:
                 sigma = float(row[0])
-                resolved_net_path = resolve_existing_file_path(
-                    row[1], project_root
-                )
+                resolved_net_path = resolve_existing_file_path(row[1], project_root)
                 self._shelf[sigma] = resolved_net_path
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
@@ -183,7 +187,7 @@ class DenAIRI(Regulariser):
         self,
         ch_heuristic: torch.Tensor,
         ch_peak_est: torch.Tensor,
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
         """Update per-channel network selection and scaling factors.
 
         Args:
@@ -251,7 +255,8 @@ class DenAIRI(Regulariser):
                             f"INFO: SHELF *** Channel {self._rank_ch_start + i}: "
                             f"heu/peak {ch_heu_peak[i]:.3e}, "
                             f"using network: {os.path.basename(self._shelf[sigma_s])}, "
-                            f"peak range: [{peak_min[i].item():#.3g}, {peak_max[i].item():#.3g}], "
+                            f"peak range: [{peak_min[i].item():#.3g}, "
+                            f"{peak_max[i].item():#.3g}], "
                             f"scaling factor: {self._list_net_scaling[i]:#.3g}",
                             flush=True,
                         )

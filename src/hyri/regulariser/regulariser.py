@@ -10,6 +10,8 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
+DEFAULT_DEVICE = torch.device("cpu")
+
 
 class Regulariser(ABC):
     """Define the base interface for regulariser operators.
@@ -31,7 +33,7 @@ class Regulariser(ABC):
         self,
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
     ) -> None:
         """Initialise shared regulariser state.

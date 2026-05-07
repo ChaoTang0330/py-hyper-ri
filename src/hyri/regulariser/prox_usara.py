@@ -4,20 +4,17 @@ This file provides a dual forward-backward proximal step combining weighted
 wavelet :math:`\\ell_1` sparsity with positivity projection.
 """
 
-from typing import Tuple, List, Union, Optional
 import math
 
-import torch
-import torch.distributed as dist
 import ptwt
 import pywt
+import torch
+import torch.distributed as dist
 
 from .regulariser import Regulariser
 
-WaveletCoeff = List[
-    Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
-]
-WaveletDictCoeff = List[Union[WaveletCoeff, torch.Tensor]]
+DEFAULT_DEVICE = torch.device("cpu")
+DEFAULT_NOISE_LEVEL = torch.tensor(1e-4)
 
 
 class ProxSARAPos(Regulariser):
@@ -57,7 +54,7 @@ class ProxSARAPos(Regulariser):
     Attributes:
         _wl_dict (list[str]): Active non-Dirac wavelet bases.
         _dirac (bool): Whether the Dirac basis is included.
-        _dual (WaveletDictCoeff): Current dual variables.
+        _dual (torch.Tensor): Current dual variables.
         _weights (list): Current wavelet reweighting coefficients.
 
     Example:
@@ -88,10 +85,10 @@ class ProxSARAPos(Regulariser):
 
     def __init__(
         self,
-        img_size: Tuple[int, int],
+        img_size: tuple[int, int],
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
-        wl_dict: Tuple[str, ...] = (
+        wl_dict: tuple[str, ...] = (
             "dirac",
             "db1",
             "db2",
@@ -104,13 +101,13 @@ class ProxSARAPos(Regulariser):
         ),
         dec_lev: int = 4,
         mode: str = "zero",
-        sfth_val: torch.Tensor = torch.tensor(1e-4),
-        wl_noise_floor: torch.Tensor = torch.tensor(1e-4),
+        sfth_val: torch.Tensor = DEFAULT_NOISE_LEVEL,
+        wl_noise_floor: torch.Tensor = DEFAULT_NOISE_LEVEL,
         max_iter: int = 20,
         obj_tol: float = 1e-4,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
-        verbose: Union[bool, int] = True,
+        verbose: bool | int = True,
     ) -> None:
         """Initialise the uSARA positivity proximal operator.
 
@@ -167,18 +164,17 @@ class ProxSARAPos(Regulariser):
 
         self._img_size = img_size
         self._rank_num_ch = rank_num_ch
-        assert (
-            sfth_val.numel() == rank_num_ch or sfth_val.numel() == 1
-        ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
+        assert sfth_val.numel() == rank_num_ch or sfth_val.numel() == 1, (
+            "Soft-thresholding value must be a scalar "
+            "or a vector with one value per channel."
+        )
         self._sfth_val = sfth_val.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )
         self._dec_lev = dec_lev
-        assert (
-            wl_noise_floor.numel() == rank_num_ch or wl_noise_floor.numel() == 1
-        ), "Noise floor level must be a scalar or a vector with one value per channel."
-        self._wl_noise_floor = wl_noise_floor.reshape(1, -1, 1).to(
-            device=self._device, dtype=self._dtype
+        assert wl_noise_floor.numel() == rank_num_ch or wl_noise_floor.numel() == 1, (
+            "Noise floor level must be a scalar "
+            "or a vector with one value per channel."
         )
         self._mode = mode
         self._scale_factor = math.sqrt(len(wl_dict))
@@ -255,7 +251,7 @@ class ProxSARAPos(Regulariser):
         Returns:
             torch.Tensor: Packed coefficient tensor with shape ``(1, C, N)``.
         """
-        coeff_list: List[torch.Tensor] = []
+        coeff_list: list[torch.Tensor] = []
         for basis in self._wl_dict:
             curr_coeff = ptwt.wavedec2(x, basis, level=self._dec_lev, mode=self._mode)
             coeff_list.append(curr_coeff[0].flatten(start_dim=2))
@@ -367,7 +363,9 @@ class ProxSARAPos(Regulariser):
             norm_l2_2 = torch.sum((result - x) ** 2)
             # Dual update stage 1: compute wavelet coefficients of current iterate
             psit_img = self._wavedec2_dict(result)
-            self._norm_l1 = torch.sum(torch.abs(psit_img * self._weights) * self._sfth_val)
+            self._norm_l1 = torch.sum(
+                torch.abs(psit_img * self._weights) * self._sfth_val
+            )
 
             # Aggregate objective terms across distributed ranks.
             if self._is_dist:
@@ -380,7 +378,8 @@ class ProxSARAPos(Regulariser):
             if self._verbose > 1 and self._rank == 0:
                 print(
                     f"  Prox Iter {i+1}, prox_fval = {obj_val:.3e},",
-                    f"rel_fval = {obj_rel_var:.3e}, l1norm_w = {self._norm_l1.item():.3e}",
+                    f"rel_fval = {obj_rel_var:.3e}, "
+                    f"l1norm_w = {self._norm_l1.item():.3e}",
                     flush=True,
                 )
             if obj_rel_var < self._obj_tol:
@@ -450,9 +449,10 @@ class ProxSARAPos(Regulariser):
             AssertionError: If the soft-thresholding value is not a scalar or a
                 vector with one value per channel.
         """
-        assert (
-            sfth_val.numel() == self._rank_num_ch or sfth_val.numel() == 1
-        ), "Soft-thresholding value must be a scalar or a vector with one value per channel."
+        assert sfth_val.numel() == self._rank_num_ch or sfth_val.numel() == 1, (
+            "Soft-thresholding value must be a scalar or "
+            "a vector with one value per channel."
+        )
         self._sfth_val = sfth_val.reshape(1, -1, 1).to(
             device=self._device, dtype=self._dtype
         )

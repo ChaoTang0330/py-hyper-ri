@@ -8,6 +8,8 @@ import torch
 
 from .regulariser import Regulariser
 
+DEFAULT_DEVICE = torch.device("cpu")
+
 
 class ProxOpPositivity(Regulariser):
     """Project tensors onto the non-negative orthant.
@@ -31,7 +33,7 @@ class ProxOpPositivity(Regulariser):
         self,
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
     ) -> None:

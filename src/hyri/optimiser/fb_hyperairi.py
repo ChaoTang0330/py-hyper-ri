@@ -6,17 +6,16 @@ updates.
 """
 
 import os
-from typing import List, Optional, Union
 
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
-from .forward_backward import ForwardBackward
-from ..regulariser import DenHyperAIRI
-from ..measurement_operator import MeasOpHyperspectral
 from ..interface import fit_clean_beam, get_spec_idx
+from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import DenHyperAIRI
+from .forward_backward import ForwardBackward
 
 
 class FBHyperAIRI(ForwardBackward):
@@ -94,23 +93,23 @@ class FBHyperAIRI(ForwardBackward):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenHyperAIRI,
-        meas_op_approx: Optional[MeasOpHyperspectral] = None,
+        meas_op_approx: MeasOpHyperspectral | None = None,
         rank_ch_start: int = 0,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
-        im_peak_est: Optional[torch.Tensor] = None,
+        im_peak_est: torch.Tensor | None = None,
         heu_noise_scale: float = 1.0,
         adapt_net_select: bool = True,
         peak_tol_min: float = 1e-3,
         peak_tol_max: float = 0.1,
         peak_tol_step: float = 0.1,
         spec_update: bool = True,
-        spec_idx_init: Union[torch.Tensor, str] = "dirty",
+        spec_idx_init: torch.Tensor | str = "dirty",
         spec_max_update_count: int = 50,
         spec_max_update_interval: int = 60,
         spec_update_tol_max: float = 1.6e-3,
@@ -511,7 +510,8 @@ class FBHyperAIRI(ForwardBackward):
                     curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
                     curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
                     print(
-                        f"  Model image peak value: ch first {curr_peak_val_ch_1:#.3g}, "
+                        f"  Model image peak value: ch first "
+                        f"{curr_peak_val_ch_1:#.3g}, "
                         f"ch end {curr_peak_val_ch_end:#.3g}, "
                         f"max relative variation = {peak_var_max:.3e}",
                         flush=True,

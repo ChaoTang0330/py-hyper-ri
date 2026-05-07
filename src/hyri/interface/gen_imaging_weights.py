@@ -4,7 +4,7 @@ This file provides Torch and NumPy implementations of uniform and Briggs
 weighting schemes used for RI imaging.
 """
 
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
 import numpy as np
 import torch
@@ -14,7 +14,7 @@ def gen_imaging_weights(
     u: torch.Tensor,
     v: torch.Tensor,
     natural_weight: torch.Tensor,
-    im_size: Tuple[int, int],
+    im_size: tuple[int, int],
     weight_type: str = "briggs",
     weight_gridsize: float = 2.0,
     weight_robustness: float = 0.0,
@@ -125,8 +125,8 @@ def gen_imaging_weights(
 def gen_imaging_weights_np(
     u: np.ndarray,
     v: np.ndarray,
-    natural_weight: Optional[np.ndarray] = None,
-    img_size: Tuple[int, int] = (512, 512),
+    natural_weight: np.ndarray | None = None,
+    img_size: tuple[int, int] = (512, 512),
     weight_type: Literal["uniform", "briggs", "robust"] = "uniform",
     weight_gridsize: int = 2,
     weight_robustness: float = 0.0,

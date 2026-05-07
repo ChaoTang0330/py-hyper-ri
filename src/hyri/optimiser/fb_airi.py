@@ -5,7 +5,6 @@ backbone with adaptive denoiser selection.
 """
 
 import os
-from typing import List, Optional
 
 import torch
 import torch.distributed as dist
@@ -74,16 +73,16 @@ class FBAIRI(ForwardBackward):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: DenAIRI,
         rank_ch_start: int = 0,
-        meas_op_approx: Optional[MeasOpHyperspectral] = None,
+        meas_op_approx: MeasOpHyperspectral | None = None,
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
-        im_peak_est: Optional[float] = None,
+        im_peak_est: float | None = None,
         heu_noise_scale: float = 1.0,
         adapt_net_select: bool = True,
         peak_tol_min: float = 1e-3,
@@ -287,7 +286,7 @@ class FBAIRI(ForwardBackward):
 
         if self._verbose and self._rank == 0:
             print(
-                f"\nIter {self._iter+1}: " 
+                f"\nIter {self._iter+1}: "
                 f"relative variation {self._im_rel_var:.3e}"
                 f"\ntimings: gradient step {self._t_forward:#.3g} sec, "
                 f"denoising step {self._t_backward:#.3g} sec, "
@@ -350,7 +349,8 @@ class FBAIRI(ForwardBackward):
                     curr_peak_val_ch_1 = curr_peak_val_full[0, 0, 0, 0].item()
                     curr_peak_val_ch_end = curr_peak_val_full[0, -1, 0, 0].item()
                     print(
-                        f"  Model image peak value: ch first {curr_peak_val_ch_1:#.3g}, "
+                        f"  Model image peak value: ch first "
+                        f"{curr_peak_val_ch_1:#.3g}, "
                         f"ch end {curr_peak_val_ch_end:#.3g}, "
                         f"max relative variation = {peak_var_max:.3e}",
                         flush=True,

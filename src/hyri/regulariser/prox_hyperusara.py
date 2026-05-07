@@ -4,15 +4,17 @@ This file provides a dual forward-backward proximal step combining weighted
 joint-channel :math:`\ell_{2,1}` wavelet sparsity with positivity projection.
 """
 
-from typing import Tuple, List, Union, Optional
 import math
 
-import torch
-import torch.distributed as dist
 import ptwt
 import pywt
+import torch
+import torch.distributed as dist
 
 from .regulariser import Regulariser
+
+DEFAULT_DEVICE = torch.device("cpu")
+DEFAULT_NOISE_LEVEL = torch.tensor(1e-4)
 
 
 class ProxHyperSARAPos(Regulariser):
@@ -87,10 +89,10 @@ class ProxHyperSARAPos(Regulariser):
 
     def __init__(
         self,
-        img_size: Tuple[int, int],
+        img_size: tuple[int, int],
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
-        wl_dict: Tuple[str, ...] = (
+        wl_dict: tuple[str, ...] = (
             "dirac",
             "db1",
             "db2",
@@ -103,13 +105,13 @@ class ProxHyperSARAPos(Regulariser):
         ),
         dec_lev: int = 4,
         mode: str = "zero",
-        sfth_val: torch.Tensor = torch.tensor(1e-4),
-        wl_noise_floor: torch.Tensor = torch.tensor(1e-4),
+        sfth_val: torch.Tensor = DEFAULT_NOISE_LEVEL,
+        wl_noise_floor: torch.Tensor = DEFAULT_NOISE_LEVEL,
         max_iter: int = 20,
         obj_tol: float = 1e-4,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
-        verbose: Union[bool, int] = True,
+        verbose: bool | int = True,
     ) -> None:
         """Initialise Hyper-uSARA proximal-operator state.
 
@@ -254,7 +256,7 @@ class ProxHyperSARAPos(Regulariser):
         Returns:
             torch.Tensor: Packed coefficient tensor with shape ``(1, C, N)``.
         """
-        coeff_list: List[torch.Tensor] = []
+        coeff_list: list[torch.Tensor] = []
         for basis in self._wl_dict:
             curr_coeff = ptwt.wavedec2(x, basis, level=self._dec_lev, mode=self._mode)
             coeff_list.append(curr_coeff[0].flatten(start_dim=2))
@@ -387,7 +389,8 @@ class ProxHyperSARAPos(Regulariser):
             if self._verbose > 1 and self._rank == 0:
                 print(
                     f"  Prox Iter {i+1}, prox_fval = {obj_val:.3e},",
-                    f"rel_fval = {obj_rel_var:.3e}, l21norm_w = {self._norm_l21.item():.3e}",
+                    f"rel_fval = {obj_rel_var:.3e}, "
+                    f"l21norm_w = {self._norm_l21.item():.3e}",
                     flush=True,
                 )
             if obj_rel_var < self._obj_tol:

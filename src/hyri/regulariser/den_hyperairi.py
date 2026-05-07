@@ -6,13 +6,15 @@ distributed boundary exchange, and optional spectral-correction updates.
 
 import csv
 import os
+
 import torch
 import torch.distributed as dist
 from onnx2torch import convert
-from typing import Optional, Tuple
 
-from .regulariser import Regulariser
 from ..interface.io import resolve_existing_file_path
+from .regulariser import Regulariser
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 class DenHyperAIRI(Regulariser):
@@ -91,7 +93,7 @@ class DenHyperAIRI(Regulariser):
         >>> y = den(x)
         >>> y.shape
         torch.Size([1, 4, 64, 64])
-    
+
     References:
         Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026).
         `HyperAIRI: a plug-and-play algorithm for precise hyperspectral image
@@ -107,7 +109,7 @@ class DenHyperAIRI(Regulariser):
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
         rand_trans: bool = True,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
     ) -> None:
@@ -291,7 +293,7 @@ class DenHyperAIRI(Regulariser):
         ch_heuristic: torch.Tensor = None,
         ch_peak_est: torch.Tensor = None,
         spec_idx: torch.Tensor = None,
-    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         """Update denoiser shelf selection and spectral correction weights.
 
         Args:
@@ -355,9 +357,11 @@ class DenHyperAIRI(Regulariser):
 
                     if self._verbose:
                         print(
-                            f"INFO: SHELF *** Channel {self._rank_ch_start + i}: heu/peak {ch_heu_peak[i]:.3e}, "
+                            f"INFO: SHELF *** Channel {self._rank_ch_start + i}: "
+                            f"heu/peak {ch_heu_peak[i]:.3e}, "
                             f"using network: {os.path.basename(self._shelf[sigma_s])}, "
-                            f"peak range: [{peak_min[i].item():#.3g}, {peak_max[i].item():#.3g}], "
+                            f"peak range: [{peak_min[i].item():#.3g}, "
+                            f"{peak_max[i].item():#.3g}], "
                             f"scaling factor: {self._list_net_scaling[i]:#.3g}",
                             flush=True,
                         )
@@ -365,7 +369,7 @@ class DenHyperAIRI(Regulariser):
             peak_min = peak_min.view(1, -1, 1, 1)
             peak_max = peak_max.view(1, -1, 1, 1)
 
-        # Update the spectral-correction weights based on the input 
+        # Update the spectral-correction weights based on the input
         # spectral-index map and local frequency ratios.
         if spec_idx is not None:
             for ch in range(

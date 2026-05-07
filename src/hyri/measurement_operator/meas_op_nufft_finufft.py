@@ -4,11 +4,14 @@ This implementation uses ``pytorch_finufft`` to evaluate nonuniform Fourier
 transforms for forward and adjoint measurement operations.
 """
 
-from typing import Any, Tuple
+from typing import Any
 
 import torch
 
 from .meas_op_nufft import MeasOpNUFFT
+
+DEFAULT_DEVICE = torch.device("cpu")
+DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 
 
 class MeasOpFinufft(MeasOpNUFFT):
@@ -56,14 +59,14 @@ class MeasOpFinufft(MeasOpNUFFT):
         self,
         u: torch.Tensor,
         v: torch.Tensor,
-        img_size: Tuple[int, int],
-        natural_weight: torch.Tensor = torch.ones(1, 1, 1),
-        image_weight: torch.Tensor = torch.ones(1, 1, 1),
-        precond_weight: torch.Tensor = torch.ones(1, 1, 1),
+        img_size: tuple[int, int],
+        natural_weight: torch.Tensor = DEFAULT_WEIGHT,
+        image_weight: torch.Tensor = DEFAULT_WEIGHT,
+        precond_weight: torch.Tensor = DEFAULT_WEIGHT,
         real_flag: bool = True,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Initialise the FINUFFT measurement operator.
 
@@ -103,6 +106,7 @@ class MeasOpFinufft(MeasOpNUFFT):
         # Import lazily to avoid hard dependency when this backend is unused.
         try:
             from pytorch_finufft.functional import finufft_type1, finufft_type2
+
             self._finufft_type1 = finufft_type1
             self._finufft_type2 = finufft_type2
         except ImportError as e:

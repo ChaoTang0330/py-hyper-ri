@@ -6,9 +6,10 @@ and PSF evaluation).
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
 
 import torch
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 class MeasOp(ABC):
@@ -28,15 +29,15 @@ class MeasOp(ABC):
             when applicable.
         _dtype (torch.dtype): Image-domain dtype.
         _dtype_meas (torch.dtype): Measurement-domain dtype.
-        _device (torch.device | None): Execution device.
+        _device (torch.device): Execution device.
         _op_norm (Optional[float]): Cached spectral-norm estimate.
     """
 
     def __init__(
         self,
-        img_size: Tuple[int, int],
+        img_size: tuple[int, int],
         real_flag: bool = True,
-        device: Optional[torch.device] = None,
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
     ) -> None:
         """Initialise shared measurement-operator state.
@@ -45,8 +46,8 @@ class MeasOp(ABC):
             img_size (tuple[int, int]): Spatial image size ``(H, W)``.
             real_flag (bool, optional): Whether the adjoint output is treated
                 as real-valued when applicable. Default: True.
-            device (torch.device | None, optional): Execution device.
-                Default: None.
+            device (torch.device, optional): Execution device.
+                Default: torch.device("cpu").
             dtype (torch.dtype, optional): Image-domain tensor dtype.
                 Default: torch.float.
         """
@@ -98,7 +99,7 @@ class MeasOp(ABC):
         self._real_flag = real_flag
         self._op_norm = None
 
-    def get_device(self) -> Optional[torch.device]:
+    def get_device(self) -> torch.device:
         """Return the device used by the measurement operator.
 
         Returns:
@@ -122,7 +123,7 @@ class MeasOp(ABC):
         """
         return self._dtype_meas
 
-    def get_img_size(self) -> Tuple[int, int]:
+    def get_img_size(self) -> tuple[int, int]:
         """Return the configured image size.
 
         Returns:
@@ -153,7 +154,9 @@ class MeasOp(ABC):
             float: Estimated spectral norm.
         """
         if self._op_norm is None or compute_flag:
-            x = torch.randn(1, 1, *self._img_size, device=self._device, dtype=self._dtype)
+            x = torch.randn(
+                1, 1, *self._img_size, device=self._device, dtype=self._dtype
+            )
             x = x / torch.linalg.vector_norm(x).item()
             init_val = 1.0
 
@@ -180,7 +183,9 @@ class MeasOp(ABC):
             torch.Tensor: PSF obtained by applying :math:`\Phi^\dagger \Phi`
             to a centered Dirac impulse.
         """
-        dirac = torch.zeros(1, 1, *self._img_size, dtype=self._dtype, device=self._device)
+        dirac = torch.zeros(
+            1, 1, *self._img_size, dtype=self._dtype, device=self._device
+        )
         dirac[0, 0, self._img_size[0] // 2, self._img_size[1] // 2] = 1.0
         psf = self.adjoint_op(self.forward_op(dirac))
 

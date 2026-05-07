@@ -6,7 +6,7 @@ products such as the model image, dirty image, PSF, and residual image.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -55,7 +55,7 @@ class Optimiser(ABC):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOp,
         save_pth: str = "results",
@@ -106,7 +106,7 @@ class Optimiser(ABC):
             self._rank_ch_num,
             *self._meas_op.get_img_size(),
             device=self._meas_op.get_device(),
-            dtype=self._meas_op.get_data_type()
+            dtype=self._meas_op.get_data_type(),
         )
         self._model = torch.zeros_like(self._meas_bp)
         self._model_prev = torch.zeros_like(self._meas_bp)
@@ -201,7 +201,7 @@ class Optimiser(ABC):
 
     def get_model_image(
         self, dtype: torch.dtype = torch.double, dest: int = 0
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Return the gathered model image cube.
 
         Args:
@@ -224,7 +224,7 @@ class Optimiser(ABC):
 
     def get_psf(
         self, dtype: torch.dtype = torch.double, dest: int = 0
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Return the gathered PSF cube.
 
         Args:
@@ -247,10 +247,10 @@ class Optimiser(ABC):
 
     def get_dirty_image(
         self,
-        normalise: Optional[float] = None,
+        normalise: float | None = None,
         dtype: torch.dtype = torch.double,
         dest: int = 0,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Return the gathered dirty image cube.
 
         Args:
@@ -275,7 +275,7 @@ class Optimiser(ABC):
 
     def get_residual_image(
         self, dtype: torch.dtype = torch.double, dest: int = 0
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Return the gathered residual image cube.
 
         Args:
@@ -303,7 +303,7 @@ class Optimiser(ABC):
         self,
         tensor_ch_rank: torch.Tensor,
         dest: int = 0,
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor | None:
         """Gather channel-partitioned image tensors to a destination rank.
 
         Args:

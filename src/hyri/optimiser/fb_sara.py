@@ -6,7 +6,6 @@ hyperspectral RI imaging with positivity and SARA regularisation.
 
 import os
 from timeit import default_timer as timer
-from typing import List, Optional
 
 import numpy as np
 import torch
@@ -79,12 +78,12 @@ class FBSARA(ForwardBackward):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxSARAPos,
         rank_ch_start: int = 0,
-        meas_op_approx: Optional[MeasOpHyperspectral] = None,
+        meas_op_approx: MeasOpHyperspectral | None = None,
         im_min_itr: int = 30,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-5,

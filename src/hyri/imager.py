@@ -5,24 +5,28 @@ from user-provided parameter dictionaries, then optionally runs the imaging
 loop.
 """
 
-from typing import Dict
-
 import torch
 import torch.distributed as dist
 
 from .interface.io import env_int
-from .regulariser import ProxSARAPos, ProxHyperSARAPos
-from .regulariser import ProxEllipsoid
-from .regulariser import DenAIRI, DenHyperAIRI
-from .optimiser import FBSARA, FBHyperSARA
-from .optimiser import FBAIRI, PDAIRI, FBHyperAIRI
-
 from .interface.load_data import load_data_to_tensor
-from .measurement_operator import MeasOpFinufft, MeasOpTkbn, MeasOpPSF
-from .measurement_operator import MeasOpHyperspectral
+from .measurement_operator import (
+    MeasOpFinufft,
+    MeasOpHyperspectral,
+    MeasOpPSF,
+    MeasOpTkbn,
+)
+from .optimiser import FBAIRI, FBSARA, PDAIRI, FBHyperAIRI, FBHyperSARA
+from .regulariser import (
+    DenAIRI,
+    DenHyperAIRI,
+    ProxEllipsoid,
+    ProxHyperSARAPos,
+    ProxSARAPos,
+)
 
 
-def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> None:
+def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> None:
     """Prepare the imaging components and optionally run reconstruction.
 
     This function loads the input data, instantiates the requested
@@ -88,12 +92,14 @@ def imager(param_optimiser: Dict, param_measop: Dict, param_proxop: Dict) -> Non
         dist.barrier()
         if param_comm["rank"] == 0:
             print(
-                f"INFO: torch.distributed initialized with backend {dist.get_backend()}",
+                f"INFO: torch.distributed initialized with backend "
+                f"{dist.get_backend()}",
                 flush=True,
             )
             print(
                 f"INFO: num of processes = {param_comm['world_size']}, "
-                f"num of nodes = {param_comm['world_size'] // param_comm['local_world_size']}",
+                f"num of nodes = "
+                f"{param_comm['world_size'] // param_comm['local_world_size']}",
                 flush=True,
             )
         dist.barrier()

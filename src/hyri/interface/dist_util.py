@@ -1,6 +1,5 @@
 """This file provides distributed tensor-gather helpers for channel-partitioned data."""
 
-from typing import Optional
 
 import torch
 from torch import distributed as dist
@@ -8,7 +7,7 @@ from torch import distributed as dist
 
 def gather_ch_to_tensor(
     tensor_ch_rank: torch.Tensor, dest: int
-) -> Optional[torch.Tensor]:
+) -> torch.Tensor | None:
     """Gather channel-partitioned tensors from all ranks to one destination rank.
 
     Each rank may hold a different number of channels. Tensors are padded to a

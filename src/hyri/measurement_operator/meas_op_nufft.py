@@ -5,11 +5,14 @@ backends (for example FINUFFT and TKBNUFFT implementations).
 """
 
 from abc import abstractmethod
-from typing import Any, Tuple
+from typing import Any
 
 import torch
 
 from .meas_op import MeasOp
+
+DEFAULT_DEVICE = torch.device("cpu")
+DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 
 
 class MeasOpNUFFT(MeasOp):
@@ -39,12 +42,12 @@ class MeasOpNUFFT(MeasOp):
         self,
         u: torch.Tensor,
         v: torch.Tensor,
-        img_size: Tuple[int, int],
-        natural_weight: torch.Tensor = torch.ones(1, 1, 1),
-        image_weight: torch.Tensor = torch.ones(1, 1, 1),
-        precond_weight: torch.Tensor = torch.ones(1, 1, 1),
+        img_size: tuple[int, int],
+        natural_weight: torch.Tensor = DEFAULT_WEIGHT,
+        image_weight: torch.Tensor = DEFAULT_WEIGHT,
+        precond_weight: torch.Tensor = DEFAULT_WEIGHT,
         real_flag: bool = True,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
         **kwargs: Any,
     ) -> None:

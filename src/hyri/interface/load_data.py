@@ -5,25 +5,27 @@ and optional weighting logic, and returns tensors ready for measurement
 operator and optimiser initialisation.
 """
 
-import os
 import glob
+import os
+
 import numpy as np
 import torch
 import torch.distributed as dist
 from scipy.constants import speed_of_light
-from typing import List, Optional, Tuple
 
-from .io import verbose_print, load_mat_to_np
 from .gen_imaging_weights import gen_imaging_weights
+from .io import load_mat_to_np, verbose_print
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 def load_data_to_tensor(
     uv_file_path: str,
-    super_resolution: Optional[float] = 1.5,
-    image_pixel_size: Optional[float] = None,
+    super_resolution: float | None = 1.5,
+    image_pixel_size: float | None = None,
     data_weighting: bool = True,
     load_weight: bool = False,
-    img_size: Tuple[int, int] = (512, 512),
+    img_size: tuple[int, int] = (512, 512),
     weight_type: str = "briggs",
     weight_gridsize: float = 2.0,
     weight_robustness: float = 0.0,
@@ -31,14 +33,14 @@ def load_data_to_tensor(
     precond_weight_gridsize: float = 2.0,
     precond_weight_type: str = "uniform",
     dtype: torch.dtype = torch.float64,
-    device: torch.device = torch.device("cpu"),
-    data: Optional[dict] = None,
-    uvw_flag: Optional[tuple] = None,
+    device: torch.device = DEFAULT_DEVICE,
+    data: dict | None = None,
+    uvw_flag: tuple | None = None,
     invert_uvw_flag: bool = False,
     ch_start: int = 1,
-    ch_last: Optional[int] = None,
-    ch_effctive: Optional[int] = None,
-    ch_partition: Optional[List[int]] = None,
+    ch_last: int | None = None,
+    ch_effctive: int | None = None,
+    ch_partition: list[int] | None = None,
     verbose: bool = True,
 ) -> dict:
     """Load channel-wise RI measurements and convert them into torch tensors.
@@ -243,8 +245,10 @@ def load_data_to_tensor(
     if is_distributed:
         dist.barrier()
     verbose_print(
-        f"INFO: rank {rank} loading channels from {rank_ch_start + 1} to {rank_ch_last},"
-        f"corresponding to effective channels from {rank_eff_ch_start + 1} to {rank_eff_ch_last}.",
+        f"INFO: rank {rank} loading channels from "
+        f"{rank_ch_start + 1} to {rank_ch_last}, "
+        f"corresponding to effective channels from "
+        f"{rank_eff_ch_start + 1} to {rank_eff_ch_last}.",
         verbose,
     )
     if is_distributed:
@@ -370,7 +374,8 @@ def load_data_to_tensor(
             (180.0 / np.pi) * 3600.0 / (image_pixel_size * spatial_bandwidth)
         )
         verbose_print(
-            f"INFO: corresponding to the super resolution factor: {super_resolution:#.4g}.",
+            f"INFO: corresponding to the super resolution factor: "
+            f"{super_resolution:#.4g}.",
             verbose_general,
         )
     else:
@@ -482,7 +487,8 @@ def load_data_to_tensor(
                 if "weight_robustness" in data:
                     weight_robustness = data["weight_robustness"].item()
                     verbose_print(
-                        f"INFO: load weight_robustness from data file {weight_robustness:#.4g}.",
+                        f"INFO: load weight_robustness from data file "
+                        f"{weight_robustness:#.4g}.",
                         verbose_general and ch == 0,
                     )
                 else:

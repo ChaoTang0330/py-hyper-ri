@@ -5,16 +5,17 @@ parameter dictionaries consumed by the imaging pipeline: measurement operator,
 regulariser/prox operator, and optimiser.
 """
 
-from typing import Any, Dict, Tuple
 import os
+from typing import Any
+
 import torch
 import torch.distributed as dist
 from astropy.io import fits
 
 
 def set_imaging_params_ri(
-    param_general: Dict[str, Any],
-) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    param_general: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Construct validated imaging parameters for RI reconstruction.
 
     This function maps user/config inputs into algorithm-ready dictionaries,

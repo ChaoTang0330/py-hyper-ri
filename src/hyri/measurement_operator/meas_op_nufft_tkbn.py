@@ -4,12 +4,15 @@ This implementation uses ``torchkbnufft`` for forward and adjoint NUFFT
 operations.
 """
 
-from typing import Any, Tuple
+from typing import Any
 
 import numpy as np
 import torch
 
 from .meas_op_nufft import MeasOpNUFFT
+
+DEFAULT_DEVICE = torch.device("cpu")
+DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 
 
 class MeasOpTkbn(MeasOpNUFFT):
@@ -57,17 +60,17 @@ class MeasOpTkbn(MeasOpNUFFT):
         self,
         u: torch.Tensor,
         v: torch.Tensor,
-        img_size: Tuple[int, int],
-        natural_weight: torch.Tensor = torch.ones(1, 1, 1),
-        image_weight: torch.Tensor = torch.ones(1, 1, 1),
-        precond_weight: torch.Tensor = torch.ones(1, 1, 1),
+        img_size: tuple[int, int],
+        natural_weight: torch.Tensor = DEFAULT_WEIGHT,
+        image_weight: torch.Tensor = DEFAULT_WEIGHT,
+        precond_weight: torch.Tensor = DEFAULT_WEIGHT,
         real_flag: bool = True,
-        grid_size: Tuple[int, int] = None,
+        grid_size: tuple[int, int] = None,
         kernel_dim: int = 7,
         mode: str = "table",
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> None:
         """Initialise the torchkbnufft measurement operator.
 

@@ -6,18 +6,17 @@ regularisation.
 """
 
 import os
-from typing import List, Optional
 from timeit import default_timer as timer
 
+import numpy as np
 import torch
 import torch.distributed as dist
-import numpy as np
 from astropy.io import fits
 
-from .forward_backward import ForwardBackward
-from ..regulariser import ProxHyperSARAPos
-from ..measurement_operator import MeasOpHyperspectral
 from ..interface.spectral_index import get_spec_idx
+from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import ProxHyperSARAPos
+from .forward_backward import ForwardBackward
 
 
 class FBHyperSARA(ForwardBackward):
@@ -83,12 +82,12 @@ class FBHyperSARA(ForwardBackward):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser: ProxHyperSARAPos,
         rank_ch_start: int = 0,
-        meas_op_approx: Optional[MeasOpHyperspectral] = None,
+        meas_op_approx: MeasOpHyperspectral | None = None,
         im_min_itr: int = 30,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-5,
@@ -103,7 +102,7 @@ class FBHyperSARA(ForwardBackward):
         """Initialise the Hyper-uSARA optimiser.
 
         Args:
-            meas (List[torch.Tensor]): Local measurement tensors, typically one
+            meas (list[torch.Tensor]): Local measurement tensors, typically one
                 tensor per local channel.
             ch_freq (torch.Tensor): Frequencies for all spectral channels.
             meas_op (MeasOpHyperspectral): Precise hyperspectral measurement
@@ -344,7 +343,8 @@ class FBHyperSARA(ForwardBackward):
                 self._im_rel_var_outer < self._im_var_tol_outer
                 or self._iter_outer + 1 >= self._im_max_itr_outer
             ):
-                # The outer loop has converged or reached the maximum number of major cycles
+                # The outer loop has converged or reached the maximum
+                # number of major cycles
                 return True
 
         return False

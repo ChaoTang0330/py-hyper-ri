@@ -4,13 +4,15 @@ This file provides a channel-wise wrapper that stacks monochromatic
 measurement operators and exposes a unified hyperspectral interface.
 """
 
-from typing import Any, Tuple, Type
+from typing import Any
 
 import torch
 import torch.distributed as dist
 
 from .meas_op import MeasOp
 from .meas_op_nufft_finufft import MeasOpFinufft
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 class MeasOpHyperspectral(MeasOp):
@@ -55,17 +57,17 @@ class MeasOpHyperspectral(MeasOp):
 
     def __init__(
         self,
-        u: Tuple[torch.Tensor],
-        v: Tuple[torch.Tensor],
-        img_size: Tuple[int, int],
-        natural_weight: Tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
-        image_weight: Tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
-        precond_weight: Tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
-        meas_op_class: Type[MeasOp] = MeasOpFinufft,
+        u: tuple[torch.Tensor],
+        v: tuple[torch.Tensor],
+        img_size: tuple[int, int],
+        natural_weight: tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
+        image_weight: tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
+        precond_weight: tuple[torch.Tensor] = (torch.ones(1, 1, 1),),
+        meas_op_class: type[MeasOp] = MeasOpFinufft,
         real_flag: bool = True,
-        grid_size: Tuple[int, int] = None,
+        grid_size: tuple[int, int] = None,
         kernel_dim: int = 7,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.float,
         verbose: bool = True,
         **kwargs: Any,
@@ -195,7 +197,7 @@ class MeasOpHyperspectral(MeasOp):
             dist.all_gather_into_tensor(gathered, local_n)
             self._num_ch = tuple(gathered.cpu().tolist())
 
-    def forward_op(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def forward_op(self, x: torch.Tensor) -> tuple[torch.Tensor, ...]:
         """Apply the hyperspectral forward operator channel-wise.
 
         Args:
@@ -215,7 +217,7 @@ class MeasOpHyperspectral(MeasOp):
 
         return tuple(y_ch)
 
-    def adjoint_op(self, y: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+    def adjoint_op(self, y: tuple[torch.Tensor, ...]) -> torch.Tensor:
         """Apply the hyperspectral adjoint operator channel-wise.
 
         Args:
@@ -339,7 +341,9 @@ class MeasOpHyperspectral(MeasOp):
         return self._op_norm_ch
 
     @torch.no_grad()
-    def get_op_norm_prime_ch(self, rel_tol=1e-5, max_iter=500, verbose=False) -> torch.Tensor:
+    def get_op_norm_prime_ch(
+        self, rel_tol=1e-5, max_iter=500, verbose=False
+    ) -> torch.Tensor:
         """Return per-channel twice-weighted norm estimates.
 
         These values are typically used to correct heuristic noise levels for
@@ -409,7 +413,7 @@ class MeasOpHyperspectral(MeasOp):
             self._op_norm_ch = None
             self._op_norm_prime_ch = None
 
-    def set_precond_weight(self, precond_weight: Tuple[torch.Tensor, ...]) -> None:
+    def set_precond_weight(self, precond_weight: tuple[torch.Tensor, ...]) -> None:
         """Set per-channel preconditioning weights.
 
         Args:

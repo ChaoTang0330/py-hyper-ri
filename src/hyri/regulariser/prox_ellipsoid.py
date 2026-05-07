@@ -5,12 +5,13 @@ variants that require projection onto per-channel weighted :math:`\ell_2` balls.
 """
 
 import math
-from typing import List, Tuple, Optional
 
 import torch
 import torch.distributed as dist
 
 from .regulariser import Regulariser
+
+DEFAULT_DEVICE = torch.device("cpu")
 
 
 class ProxEllipsoid(Regulariser):
@@ -62,7 +63,7 @@ class ProxEllipsoid(Regulariser):
         >>> y = prox(x)
         >>> y[0].shape
         torch.Size([4, 4])
-    
+
     References:
         Onose, A., Dabbech, A., & Wiaux, Y. (2017). `An accelerated splitting
         algorithm for radio-interferometric imaging: when natural and uniform
@@ -72,15 +73,15 @@ class ProxEllipsoid(Regulariser):
 
     def __init__(
         self,
-        center: List[torch.Tensor],
-        precond_weight: Optional[List[torch.Tensor]] = None,
-        radius: Optional[torch.Tensor] = None,
+        center: list[torch.Tensor],
+        precond_weight: list[torch.Tensor] | None = None,
+        radius: torch.Tensor | None = None,
         rank_num_ch: int = 1,
         rank_ch_start: int = 0,
         itr_min: int = 1,
         itr_max: int = 10,
         rel_var_tol: float = 1e-6,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device = DEFAULT_DEVICE,
         dtype: torch.dtype = torch.complex64,
         verbose: bool = False,
     ):
@@ -134,8 +135,8 @@ class ProxEllipsoid(Regulariser):
             ]
         self._precond_weight = tuple(precond_weight)
         if radius is None:
-            # The theoretical l2 error bounds are used as the default radius of the \ell_2 ball,
-            # assume chi-square distribution and tau=1
+            # The theoretical l2 error bounds are used as the default radius of
+            # the :math:`\ell_2` ball, assume chi-square distribution and tau=1
             radius = torch.tensor(
                 [
                     math.sqrt(torch.numel(c) + 2.0 * math.sqrt(torch.numel(c)))
@@ -156,7 +157,7 @@ class ProxEllipsoid(Regulariser):
         )
 
     @torch.no_grad()
-    def __call__(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+    def __call__(self, x: list[torch.Tensor]) -> list[torch.Tensor]:
         """Project channel tensors onto the configured ellipsoids.
 
         Args:
@@ -187,8 +188,8 @@ class ProxEllipsoid(Regulariser):
 
     @torch.no_grad()
     def _grad_descent(
-        self, result: List[torch.Tensor], target: List[torch.Tensor]
-    ) -> List[torch.Tensor]:
+        self, result: list[torch.Tensor], target: list[torch.Tensor]
+    ) -> list[torch.Tensor]:
         """Perform one weighted forward gradient step.
 
         Args:
@@ -207,7 +208,7 @@ class ProxEllipsoid(Regulariser):
         ]
 
     @torch.no_grad()
-    def _proj_l2_ball(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+    def _proj_l2_ball(self, x: list[torch.Tensor]) -> list[torch.Tensor]:
         """Project tensors onto per-channel Euclidean balls.
 
         Args:
@@ -234,7 +235,7 @@ class ProxEllipsoid(Regulariser):
         """
         pass
 
-    def get_radius(self) -> Tuple[float, ...]:
+    def get_radius(self) -> tuple[float, ...]:
         """Return configured per-channel projection radii.
 
         Returns:
@@ -242,7 +243,7 @@ class ProxEllipsoid(Regulariser):
         """
         return self._radius
 
-    def set_radius(self, radius: Tuple[float, ...]) -> None:
+    def set_radius(self, radius: tuple[float, ...]) -> None:
         """Set the projection radii for each local channel.
 
         Args:
@@ -253,7 +254,7 @@ class ProxEllipsoid(Regulariser):
         ), "Radius tuple length must match local channel count."
         self._radius = radius
 
-    def get_precond_weight(self) -> Tuple[torch.Tensor, ...]:
+    def get_precond_weight(self) -> tuple[torch.Tensor, ...]:
         """Return per-channel preconditioning weights.
 
         Returns:

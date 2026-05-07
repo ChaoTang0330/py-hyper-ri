@@ -204,7 +204,8 @@ def get_spec_idx(
         for j in range(img_cube.shape[-1]):
             if not prec_flag[i, j].item():
                 continue
-            # Fit the spectral slope only for pixels that are valid across all frequencies.
+            # Fit the spectral slope only for pixels that are valid across all
+            # frequencies.
             pixels = img_cube[:, i, j]
             coeffs = np.polyfit(np.log(freqs).flatten(), np.log(pixels).flatten(), 1)
             alpha[i, j] = coeffs[0]

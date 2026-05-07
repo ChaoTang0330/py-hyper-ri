@@ -7,7 +7,6 @@ timing, and heuristic noise-level estimation shared by those variants.
 
 import os
 from timeit import default_timer as timer
-from typing import List, Optional
 
 import numpy as np
 import torch
@@ -59,11 +58,11 @@ class ForwardBackward(Optimiser):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOp,
         regulariser: Regulariser,
-        meas_op_precise: Optional[MeasOp] = None,
+        meas_op_precise: MeasOp | None = None,
         heu_noise_scale: float = 1.0,
         im_max_itr: int = 2000,
         save_pth: str = "results",
@@ -116,14 +115,13 @@ class ForwardBackward(Optimiser):
         self._start_iter = 0
         self._im_max_itr = im_max_itr
         self._gd_step_size = 1.0
+        self._iter = 0
 
         # Cache wall-clock timing statistics for logging and diagnostics.
         self._t_total = 0.0
         self._t_iter = 0.0
         self._t_forward = 0.0
         self._t_backward = 0.0
-
-        self._iter = 0
 
         # Enable CUDA-event timing only when the relevant step runs on CUDA.
         self._forward_cuda_timing = False
@@ -175,7 +173,8 @@ class ForwardBackward(Optimiser):
             backward_end_event = torch.cuda.Event(enable_timing=True)
 
         self._t_total = timer()
-        for self._iter in range(self._start_iter, self._im_max_itr):
+        for iter_idx in range(self._start_iter, self._im_max_itr):
+            self._iter = iter_idx
             if self._is_distributed:
                 dist.barrier()
 

@@ -3,8 +3,7 @@
 import json
 
 from .imager import imager
-from .interface import set_imaging_params_ri
-from .interface import env_int, print_dict
+from .interface import env_int, print_dict, set_imaging_params_ri
 from .interface.io import parsing_arguments, parsing_parameters
 
 

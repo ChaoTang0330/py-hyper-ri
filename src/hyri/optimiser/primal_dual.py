@@ -6,16 +6,15 @@ for data fidelity and a proximal primal update for regularisation.
 
 import os
 from timeit import default_timer as timer
-from typing import List
 
 import numpy as np
 import torch
 import torch.distributed as dist
 from astropy.io import fits
 
-from .optimiser import Optimiser
-from ..regulariser import Regulariser, ProxEllipsoid
 from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import ProxEllipsoid, Regulariser
+from .optimiser import Optimiser
 
 
 class PrimalDualPrecond(Optimiser):
@@ -65,7 +64,7 @@ class PrimalDualPrecond(Optimiser):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser_prime: Regulariser,
@@ -117,6 +116,8 @@ class PrimalDualPrecond(Optimiser):
         self._start_iter = 0
         self._im_max_itr = im_max_itr
         self._pr_step_size = 1.0
+        self._iter = 0
+
         # Store one preconditioning weight per local visibility channel.
         self._precond_weight = [
             torch.ones(1, 1, device=meas_op.get_device())
@@ -126,7 +127,6 @@ class PrimalDualPrecond(Optimiser):
         self._dual = [torch.zeros_like(m) for m in self._meas]
 
         # Cache wall-clock timing statistics for logging and diagnostics.
-        self._iter = 1
         self._t_total = 0.0
         self._t_iter = 0.0
         self._t_primal = 0.0
@@ -174,7 +174,8 @@ class PrimalDualPrecond(Optimiser):
             torch.cuda.synchronize()
 
         self._t_total = timer()
-        for self._iter in range(self._start_iter, self._im_max_itr):
+        for iter_idx in range(self._start_iter, self._im_max_itr):
+            self._iter = iter_idx
             self._t_iter = timer()
             self._each_iter_begin()
 

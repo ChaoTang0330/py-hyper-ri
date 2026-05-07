@@ -5,11 +5,11 @@ imaging entry points, plus compatibility loading for MATLAB files stored in
 either legacy formats or HDF5-based v7.3 format.
 """
 
-import os
 import argparse
 import json
+import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import h5py
 import numpy as np
@@ -47,7 +47,7 @@ def env_int(name: str, default: int) -> int:
 def resolve_existing_file_path(
     path: str,
     library_root: str,
-    relative_anchor: Optional[str] = None,
+    relative_anchor: str | None = None,
 ) -> str:
     """Resolve a file path against common project roots and validate existence.
 
@@ -108,12 +108,15 @@ def resolve_existing_file_path(
                 return key
 
     raise FileNotFoundError(
-        "File not found: " + path + "; attempted: " + ", ".join(str(a) for a in attempts)
+        "File not found: "
+        + path
+        + "; attempted: "
+        + ", ".join(str(a) for a in attempts)
     )
 
 
 def print_dict(
-    curr_dict: Dict[str, Any], indentation: int = 4, flush: bool = True
+    curr_dict: dict[str, Any], indentation: int = 4, flush: bool = True
 ) -> None:
     """Print key-value pairs from a dictionary.
 
@@ -143,7 +146,7 @@ def verbose_print(args: str, verbose: bool = True) -> None:
         print(args, flush=True)
 
 
-def load_mat_to_np(file_name: str) -> Dict[str, Any]:
+def load_mat_to_np(file_name: str) -> dict[str, Any]:
     """Load MATLAB data into a Python dictionary.
 
     Files with MATLAB v7.3 format are read with :mod:`h5py`, while older
@@ -232,10 +235,16 @@ def parsing_arguments() -> argparse.Namespace:
         help="Imaging algorithm.",
     )
     parser.add_argument(
-        "--im_dim_x", type=int, default=None, help="Reconstructed image width in pixels."
+        "--im_dim_x",
+        type=int,
+        default=None,
+        help="Reconstructed image width in pixels.",
     )
     parser.add_argument(
-        "--im_dim_y", type=int, default=None, help="Reconstructed image height in pixels."
+        "--im_dim_y",
+        type=int,
+        default=None,
+        help="Reconstructed image height in pixels.",
     )
     parser.add_argument(
         "--dnn_shelf_path",
@@ -290,8 +299,8 @@ def parsing_arguments() -> argparse.Namespace:
 
 
 def parsing_parameters(
-    config_file: str, input_param: Optional[argparse.Namespace] = None
-) -> Dict[str, Any]:
+    config_file: str, input_param: argparse.Namespace | None = None
+) -> dict[str, Any]:
     """Merge configuration-file parameters with CLI overrides.
 
     The returned dictionary starts from the ``main`` config section, applies
@@ -316,7 +325,7 @@ def parsing_parameters(
         parameters are expected not to overlap with keys from the ``main``
         section or command-line inputs.
     """
-    with open(config_file, "r", encoding="utf-8") as file:
+    with open(config_file, encoding="utf-8") as file:
         json_data = json.load(file)
 
     json_dict = {}

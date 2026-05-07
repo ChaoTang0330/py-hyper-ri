@@ -6,16 +6,15 @@ data-fidelity prox in the dual update.
 """
 
 import os
-from typing import List, Optional
 
 import torch
 import torch.distributed as dist
 from astropy.io import fits
 
-from .primal_dual import PrimalDualPrecond
-from ..regulariser import DenAIRI, ProxEllipsoid
-from ..measurement_operator import MeasOpHyperspectral
 from ..interface import get_spec_idx
+from ..measurement_operator import MeasOpHyperspectral
+from ..regulariser import DenAIRI, ProxEllipsoid
+from .primal_dual import PrimalDualPrecond
 
 
 class PDAIRI(PrimalDualPrecond):
@@ -75,7 +74,7 @@ class PDAIRI(PrimalDualPrecond):
 
     def __init__(
         self,
-        meas: List[torch.Tensor],
+        meas: list[torch.Tensor],
         ch_freq: torch.Tensor,
         meas_op: MeasOpHyperspectral,
         regulariser_prime: DenAIRI,
@@ -84,7 +83,7 @@ class PDAIRI(PrimalDualPrecond):
         im_min_itr: int = 100,
         im_max_itr: int = 2000,
         im_var_tol: float = 1e-4,
-        im_peak_est: Optional[float] = None,
+        im_peak_est: float | None = None,
         heu_noise_scale: float = 1.0,
         adapt_net_select: bool = True,
         peak_tol_min: float = 1e-3,
