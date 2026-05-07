@@ -7,7 +7,7 @@ import os
 
 import torch
 
-from src.hyri.interface.load_data import load_data_to_tensor
+from hyri.interface.load_data import load_data_to_tensor
 
 TEST_MEAS_PATH = os.path.join(
     os.path.dirname(__file__), "data", "3c353_sim_vla_meas_hs"

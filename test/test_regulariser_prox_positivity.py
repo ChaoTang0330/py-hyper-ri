@@ -2,7 +2,7 @@
 
 import torch
 
-from src.hyri.regulariser.prox_positivity import ProxOpPositivity
+from hyri.regulariser.prox_positivity import ProxOpPositivity
 
 from .regulariser_helpers import make_image_tensor
 

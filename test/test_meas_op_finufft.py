@@ -2,7 +2,7 @@
 
 import torch
 
-from src.hyri.measurement_operator import MeasOpFinufft
+from hyri.measurement_operator import MeasOpFinufft
 
 from .meas_op_helpers import create_random_uv, create_test_image
 

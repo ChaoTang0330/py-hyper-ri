@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from src.hyri.interface.imaging_param import set_imaging_params_ri
+from hyri.interface.imaging_param import set_imaging_params_ri
 
 
 def _base_param_general() -> dict:
@@ -90,7 +90,9 @@ def test_set_imaging_params_ri_channel_partition_overrides_effective(
 def test_set_imaging_params_ri_invalid_channel_partition_falls_back(
     tmp_path: Path,
 ) -> None:
-    """Invalid ch_partition entries should clear partition and keep original ch_effective."""
+    """
+    Invalid ch_partition entries should clear partition and keep original ch_effective.
+    """
     param_general = _base_param_general()
     param_general.update(
         {
@@ -124,7 +126,9 @@ def test_set_imaging_params_ri_device_fallback_cpu(tmp_path: Path) -> None:
 
 
 def test_set_imaging_params_ri_dtype_fallbacks(tmp_path: Path) -> None:
-    """Invalid dtype strings should fall back to default (float for meas, float for prox)."""
+    """
+    Invalid dtype strings should fall back to default (float for meas, float for prox).
+    """
     param_general = _base_param_general()
     param_general.update(
         {
@@ -386,9 +390,7 @@ def test_set_imaging_params_ri_image_pixel_size(tmp_path: Path) -> None:
     """Image pixel size should be set when valid and None when invalid."""
     # Valid pixel size
     param_general = _base_param_general()
-    param_general.update(
-        {"result_path": str(tmp_path), "im_pixel_size": 0.5}
-    )
+    param_general.update({"result_path": str(tmp_path), "im_pixel_size": 0.5})
 
     param_measop, _, _ = set_imaging_params_ri(param_general)
 
@@ -396,9 +398,7 @@ def test_set_imaging_params_ri_image_pixel_size(tmp_path: Path) -> None:
 
     # Invalid pixel size (<=0) should fall back to None
     param_general = _base_param_general()
-    param_general.update(
-        {"result_path": str(tmp_path), "im_pixel_size": -0.1}
-    )
+    param_general.update({"result_path": str(tmp_path), "im_pixel_size": -0.1})
 
     param_measop, _, _ = set_imaging_params_ri(param_general)
 
@@ -409,9 +409,7 @@ def test_set_imaging_params_ri_superresolution_factor(tmp_path: Path) -> None:
     """Superresolution factor should be set when >=1.0 and default to 1.0 otherwise."""
     # Valid superresolution
     param_general = _base_param_general()
-    param_general.update(
-        {"result_path": str(tmp_path), "superresolution": 2.5}
-    )
+    param_general.update({"result_path": str(tmp_path), "superresolution": 2.5})
 
     param_measop, _, _ = set_imaging_params_ri(param_general)
 
@@ -419,9 +417,7 @@ def test_set_imaging_params_ri_superresolution_factor(tmp_path: Path) -> None:
 
     # Invalid superresolution (<1.0) should fall back to 1.0
     param_general = _base_param_general()
-    param_general.update(
-        {"result_path": str(tmp_path), "superresolution": 0.5}
-    )
+    param_general.update({"result_path": str(tmp_path), "superresolution": 0.5})
 
     param_measop, _, _ = set_imaging_params_ri(param_general)
 
@@ -432,9 +428,7 @@ def test_set_imaging_params_ri_iteration_save_override(tmp_path: Path) -> None:
     """itr_save should be overridable and default to im_max_itr + 1 when invalid."""
     # Valid itr_save
     param_general = _base_param_general()
-    param_general.update(
-        {"result_path": str(tmp_path), "itr_save": 500}
-    )
+    param_general.update({"result_path": str(tmp_path), "itr_save": 500})
 
     _, _, param_optimiser = set_imaging_params_ri(param_general)
 
@@ -486,9 +480,7 @@ def test_set_imaging_params_ri_usara_reweighting_save(tmp_path: Path) -> None:
     """uSARA should support reweighting_save flag (defaults to False)."""
     # Default reweighting_save for uSARA
     param_general = _base_param_general()
-    param_general.update(
-        {"algorithm": "usara", "result_path": str(tmp_path)}
-    )
+    param_general.update({"algorithm": "usara", "result_path": str(tmp_path)})
 
     _, _, param_optimiser = set_imaging_params_ri(param_general)
 
@@ -526,7 +518,8 @@ def test_set_imaging_params_ri_weight_robustness_and_gridsize(tmp_path: Path) ->
     assert param_measop["weight_robustness"] == 0.5
     assert param_measop["weight_gridsize"] == 3.5
 
-    # Negative weight_robustness is accepted (no range validation), but gridsize falls back
+    # Negative weight_robustness is accepted (no range validation),
+    # but gridsize falls back
     param_general = _base_param_general()
     param_general.update(
         {
@@ -538,7 +531,9 @@ def test_set_imaging_params_ri_weight_robustness_and_gridsize(tmp_path: Path) ->
 
     param_measop, _, _ = set_imaging_params_ri(param_general)
 
-    assert param_measop["weight_robustness"] == -1.0  # Accepts negative (only checks truthy)
+    assert (
+        param_measop["weight_robustness"] == -1.0
+    )  # Accepts negative (only checks truthy)
     assert param_measop["weight_gridsize"] == 2  # Falls back due to <=0 validation
 
     # Zero weight_robustness should fall back to default

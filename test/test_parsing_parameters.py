@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.hyri.interface.io import parsing_parameters
+from hyri.interface.io import parsing_parameters
 
 
 def _write_config(tmp_path: Path, algorithm: str = "airi") -> Path:
@@ -112,7 +112,9 @@ def _write_config(tmp_path: Path, algorithm: str = "airi") -> Path:
     return config_path
 
 
-def test_parsing_parameters_merges_main_general_and_algo_sections(tmp_path: Path) -> None:
+def test_parsing_parameters_merges_main_general_and_algo_sections(
+    tmp_path: Path,
+) -> None:
     """Config-only parse should merge main + general + algorithm-specific sections."""
     config_path = _write_config(tmp_path, algorithm="airi")
 
@@ -141,7 +143,9 @@ def test_parsing_parameters_merges_main_general_and_algo_sections(tmp_path: Path
 
 
 def test_parsing_parameters_applies_cli_overrides(tmp_path: Path) -> None:
-    """CLI args should override matching main fields and dnn_shelf_path when provided."""
+    """
+    CLI args should override matching main fields and dnn_shelf_path when provided.
+    """
     config_path = _write_config(tmp_path, algorithm="airi")
 
     input_param = argparse.Namespace(

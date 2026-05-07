@@ -14,7 +14,6 @@ from .test_regulariser_prox_positivity import create_prox_positivity
 from .test_regulariser_prox_usara import create_prox_usara
 from .test_regulariser_prox_hyperusara import create_prox_hyperusara
 
-
 REGULARISERS = [
     "positivity",
     "proxusara",

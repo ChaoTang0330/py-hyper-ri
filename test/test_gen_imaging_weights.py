@@ -5,7 +5,10 @@ Unit tests for imaging weight generation utilities.
 import numpy as np
 import torch
 
-from src.hyri.interface.gen_imaging_weights import gen_imaging_weights, gen_imaging_weights_np
+from hyri.interface.gen_imaging_weights import (
+    gen_imaging_weights,
+    gen_imaging_weights_np,
+)
 
 
 def _sample_uvn() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -13,9 +16,15 @@ def _sample_uvn() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     Generate a compact synthetic uv sample with positive natural weights.
     """
     # Cover multiple quadrants and include exact boundaries -pi and pi.
-    u = torch.tensor([[[-torch.pi, -1.70, -0.60, 0.40, 1.30, torch.pi]]], dtype=torch.float64)
-    v = torch.tensor([[[torch.pi, -2.40, 1.80, -1.20, 0.20, -torch.pi]]], dtype=torch.float64)
-    natural_weight = torch.tensor([[[1.0, 0.8, 1.2, 1.1, 0.9, 1.3]]], dtype=torch.float64)
+    u = torch.tensor(
+        [[[-torch.pi, -1.70, -0.60, 0.40, 1.30, torch.pi]]], dtype=torch.float64
+    )
+    v = torch.tensor(
+        [[[torch.pi, -2.40, 1.80, -1.20, 0.20, -torch.pi]]], dtype=torch.float64
+    )
+    natural_weight = torch.tensor(
+        [[[1.0, 0.8, 1.2, 1.1, 0.9, 1.3]]], dtype=torch.float64
+    )
     return u, v, natural_weight
 
 

@@ -2,7 +2,7 @@
 
 import torch
 
-from src.hyri.regulariser.prox_ellipsoid import ProxEllipsoid
+from hyri.regulariser.prox_ellipsoid import ProxEllipsoid
 
 from .regulariser_helpers import make_measurement_center_like, make_measurement_list
 
@@ -65,7 +65,7 @@ def test_ellipsoid_keeps_feasible_point_unchanged() -> None:
     reg.update()
 
     y = reg([x_ch.clone() for x_ch in x])
-    for x_ch, y_ch in zip(x, y):
+    for x_ch, y_ch in zip(x, y, strict=True):
         assert torch.allclose(y_ch, x_ch, atol=1e-5, rtol=1e-5)
 
 

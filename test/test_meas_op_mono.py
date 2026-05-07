@@ -13,7 +13,9 @@ def _build_backend_op(backend: str):
     if backend == "finufft":
         return build_finufft_op(n_samples=256, img_size=(64, 64), dtype=torch.float32)
     if backend == "tkbnufft":
-        return build_tkbn_op(mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float32)
+        return build_tkbn_op(
+            mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float32
+        )
     raise ValueError(f"Unknown backend: {backend}")
 
 
@@ -55,8 +57,12 @@ def test_nufft_zero_inputs(backend: str) -> None:
     x0 = torch.zeros((1, 1, 64, 64), dtype=torch.float32)
     y0 = torch.zeros((1, 1, 256), dtype=torch.complex64)
 
-    assert torch.allclose(op.forward_op(x0), torch.zeros((1, 1, 256), dtype=torch.complex64), atol=1e-6)
-    assert torch.allclose(op.adjoint_op(y0), torch.zeros((1, 1, 64, 64), dtype=torch.float32), atol=1e-6)
+    assert torch.allclose(
+        op.forward_op(x0), torch.zeros((1, 1, 256), dtype=torch.complex64), atol=1e-6
+    )
+    assert torch.allclose(
+        op.adjoint_op(y0), torch.zeros((1, 1, 64, 64), dtype=torch.float32), atol=1e-6
+    )
 
 
 @pytest.mark.parametrize("backend", ["finufft", "tkbnufft"])
@@ -77,7 +83,9 @@ def test_nufft_float64_output_dtype(backend: str) -> None:
     if backend == "finufft":
         op = build_finufft_op(n_samples=256, img_size=(64, 64), dtype=torch.float64)
     else:
-        op = build_tkbn_op(mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float64)
+        op = build_tkbn_op(
+            mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float64
+        )
 
     x = create_test_image((64, 64), dtype=torch.float64)
     y = op.forward_op(x)
@@ -91,7 +99,9 @@ def test_nufft_real_adjoint_consistency_float64(backend: str) -> None:
     if backend == "finufft":
         op = build_finufft_op(n_samples=256, img_size=(64, 64), dtype=torch.float64)
     else:
-        op = build_tkbn_op(mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float64)
+        op = build_tkbn_op(
+            mode="table", n_samples=256, img_size=(64, 64), dtype=torch.float64
+        )
 
     x = create_test_image((64, 64), dtype=torch.float64, seed=2)
     y = torch.randn((1, 1, 256), dtype=torch.complex128)
@@ -123,13 +133,23 @@ def test_nufft_precond_weight_scales_forward(backend: str) -> None:
     img_size = (64, 64)
 
     if backend == "finufft":
-        op_ref = build_finufft_op(n_samples=n_samples, img_size=img_size, dtype=torch.float32)
-        op_scaled = build_finufft_op(n_samples=n_samples, img_size=img_size, dtype=torch.float32)
+        op_ref = build_finufft_op(
+            n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
+        op_scaled = build_finufft_op(
+            n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
     else:
-        op_ref = build_tkbn_op(mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32)
-        op_scaled = build_tkbn_op(mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32)
+        op_ref = build_tkbn_op(
+            mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
+        op_scaled = build_tkbn_op(
+            mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
 
-    op_scaled.set_precond_weight(torch.full((1, 1, n_samples), 2.0, dtype=torch.complex64))
+    op_scaled.set_precond_weight(
+        torch.full((1, 1, n_samples), 2.0, dtype=torch.complex64)
+    )
 
     x = create_test_image(img_size, dtype=torch.float32, seed=5)
 
@@ -146,9 +166,13 @@ def test_nufft_data_weight_changes_output(backend: str) -> None:
     img_size = (64, 64)
 
     if backend == "finufft":
-        op_uniform = build_finufft_op(n_samples=n_samples, img_size=img_size, dtype=torch.float32)
+        op_uniform = build_finufft_op(
+            n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
     else:
-        op_uniform = build_tkbn_op(mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32)
+        op_uniform = build_tkbn_op(
+            mode="table", n_samples=n_samples, img_size=img_size, dtype=torch.float32
+        )
 
     natural_weight = torch.ones((1, 1, n_samples), dtype=torch.float32)
     natural_weight[:, :, :64] = 0.1

@@ -12,7 +12,9 @@ def make_image_tensor(
     """Create deterministic image tensor of shape (1, C, H, W)."""
     g = torch.Generator(device="cpu")
     g.manual_seed(seed)
-    return torch.randn((1, channels, img_size[0], img_size[1]), generator=g, dtype=dtype)
+    return torch.randn(
+        (1, channels, img_size[0], img_size[1]), generator=g, dtype=dtype
+    )
 
 
 def make_positive_threshold(
@@ -35,7 +37,9 @@ def make_measurement_list(
     """Create deterministic measurement-domain tensors as a channel list."""
     g = torch.Generator(device="cpu")
     g.manual_seed(seed)
-    return [torch.randn((1, 1, n_meas), generator=g, dtype=dtype) for _ in range(channels)]
+    return [
+        torch.randn((1, 1, n_meas), generator=g, dtype=dtype) for _ in range(channels)
+    ]
 
 
 def make_measurement_center_like(x_list: list[torch.Tensor]) -> list[torch.Tensor]:
@@ -57,7 +61,7 @@ def assert_shape_dtype_finite_measurement_list(
     """Assert output measurement list keeps per-channel shape/dtype and is finite."""
     assert isinstance(y, list)
     assert len(y) == len(x)
-    for y_ch, x_ch in zip(y, x):
+    for y_ch, x_ch in zip(y, x, strict=True):
         assert y_ch.shape == x_ch.shape
         assert y_ch.dtype == x_ch.dtype
         assert torch.isfinite(y_ch).all()

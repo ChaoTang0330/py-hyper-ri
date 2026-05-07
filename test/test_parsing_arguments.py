@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from src.hyri.interface.io import parsing_arguments
+from hyri.interface.io import parsing_arguments
 
 
 def test_parsing_arguments_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

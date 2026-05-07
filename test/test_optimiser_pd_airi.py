@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.hyri.optimiser import PDAIRI
+from hyri.optimiser import PDAIRI
 
 from .optimiser_helpers import make_test_meas
 from .test_meas_op_hs import build_hs_op

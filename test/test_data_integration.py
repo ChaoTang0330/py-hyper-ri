@@ -6,9 +6,8 @@ import numpy as np
 import torch
 from astropy.io import fits
 
-from src.hyri.interface.load_data import load_data_to_tensor
-from src.hyri.measurement_operator import MeasOpHyperspectral
-
+from hyri.interface.load_data import load_data_to_tensor
+from hyri.measurement_operator import MeasOpHyperspectral
 
 TEST_MEAS_PATH = os.path.join(
     os.path.dirname(__file__), "data", "3c353_sim_vla_meas_hs"
@@ -62,7 +61,9 @@ def test_hs_load_compute_psf_and_dirty_against_reference() -> None:
     dirty_out = dirty_normalised.squeeze().cpu().numpy().astype(np.float32)
 
     rel_psf = np.linalg.vector_norm(psf_out - psf_ref) / np.linalg.vector_norm(psf_ref)
-    rel_dirty = np.linalg.vector_norm(dirty_out - dirty_ref) / np.linalg.vector_norm(dirty_ref)
+    rel_dirty = np.linalg.vector_norm(dirty_out - dirty_ref) / np.linalg.vector_norm(
+        dirty_ref
+    )
 
     assert psf_out.shape == psf_ref.shape
     assert dirty_out.shape == dirty_ref.shape

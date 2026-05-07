@@ -2,7 +2,7 @@
 
 import torch
 
-from src.hyri.measurement_operator import MeasOpPSF
+from hyri.measurement_operator import MeasOpPSF
 
 from .meas_op_helpers import create_random_uv, create_test_image
 from .test_meas_op_finufft import build_finufft_op
@@ -65,7 +65,8 @@ def test_psf_ata_consistent_with_finufft() -> None:
 
     assert ata_psf.shape == ata_finufft.shape
 
-    # The PSF-based convolution is an approximation of FINUFFT A*A; allow small mismatch.
+    # The PSF-based convolution is an approximation of FINUFFT A*A;
+    # allow small mismatch.
     diff_norm = torch.linalg.vector_norm(ata_psf - ata_finufft)
     ref_norm = torch.linalg.vector_norm(ata_finufft).clamp_min(1e-12)
     rel_err = (diff_norm / ref_norm).item()
