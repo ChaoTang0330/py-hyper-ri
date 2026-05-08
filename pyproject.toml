@@ -30,14 +30,30 @@ dev = [
     "build",
     "twine",
 ]
+docs = [
+    "sphinx==7.2.6",
+    "pytorch-sphinx-theme2==0.4.9",
+    "sphinxcontrib-katex==0.9.11",
+    "sphinx-copybutton==0.5.0",
+    "sphinx-design==0.6.1",
+    "myst-parser==4.0.1",
+    "myst-nb==1.3.0",
+]
 notebook = [
     "ipykernel",
+    "jupyterlab",
 ]
 cuda = [
     "cufinufft>=2.2.0",
 ]
 ms = [
     "python-casacore",
+]
+
+[tool.setuptools.package-data]
+hyri = [
+    "airi_denoisers/*.csv",
+    "airi_denoisers/**/*.onnx",
 ]
 
 [project.scripts]

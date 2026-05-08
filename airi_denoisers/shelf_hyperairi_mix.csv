@@ -1,6 +1,0 @@
-1.0e-5,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_1.0e-5.onnx
-2.0e-5,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_2.0e-5.onnx
-4.0e-5,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_4.0e-5.onnx
-8.0e-5,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_8.0e-5.onnx
-1.6e-4,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_1.6e-4.onnx
-3.2e-4,./airi_denoisers/v1_hyperairi_mix_shelf/hyperairi_denoiser_noise_3.2e-4.onnx

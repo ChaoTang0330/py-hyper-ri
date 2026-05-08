@@ -17,7 +17,7 @@ def create_den_airi(
 ) -> tuple[DenAIRI, torch.Tensor]:
     """Create DenAIRI regulariser and input for common tests."""
     reg = DenAIRI(
-        shelf_path="./airi_denoisers/shelf_airi_mrid.csv",
+        shelf_path="shelf_airi_mrid.csv",
         rand_trans=False,
         rank_num_ch=channels,
         dtype=dtype,

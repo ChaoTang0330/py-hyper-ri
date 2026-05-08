@@ -25,7 +25,7 @@ def create_den_hyperairi(
         rank_num_ch=channels,
         rank_ch_start=0,
         ch_freq=torch.linspace(1.0, 1.1, channels, dtype=dtype),
-        shelf_path="./airi_denoisers/shelf_hyperairi_mix.csv",
+        shelf_path="shelf_hyperairi_mix.csv",
         rand_trans=False,
         dtype=dtype,
         verbose=False,

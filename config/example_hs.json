@@ -54,7 +54,7 @@
         "airi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
+            "dnn_shelf_path": "shelf_airi_oaid.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
             "dnn_apply_transform": true
@@ -73,7 +73,7 @@
         "cairi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_airi_oaid.csv",
+            "dnn_shelf_path": "shelf_airi_oaid.csv",
             "precond_flag": true,
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
@@ -107,7 +107,7 @@
         "hyperairi": {
             "denoiser_comment_1": "airi params",
             "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "./airi_denoisers/shelf_hyperairi_mix.csv",
+            "dnn_shelf_path": "shelf_hyperairi_mix.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
             "dnn_apply_transform": true,

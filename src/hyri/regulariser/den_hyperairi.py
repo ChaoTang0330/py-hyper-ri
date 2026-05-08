@@ -6,6 +6,7 @@ distributed boundary exchange, and optional spectral-correction updates.
 
 import csv
 import os
+from importlib.resources import files
 
 import torch
 import torch.distributed as dist
@@ -159,16 +160,14 @@ class DenHyperAIRI(Regulariser):
         self._verbose = verbose
 
         # load paths of networks
-        project_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        resolved_shelf_path = resolve_existing_file_path(shelf_path, project_root)
+        package_root = files("hyri").joinpath("airi_denoisers")
+        resolved_shelf_path = resolve_existing_file_path(shelf_path, package_root)
 
         with open(resolved_shelf_path, newline="", encoding="utf-8") as shelf_file:
             shelf_reader = csv.reader(shelf_file, delimiter=",")
             for row in shelf_reader:
                 sigma = float(row[0])
-                resolved_net_path = resolve_existing_file_path(row[1], project_root)
+                resolved_net_path = resolve_existing_file_path(row[1], package_root)
                 self._shelf[sigma] = resolved_net_path
         if not self._shelf:
             raise RuntimeError("Shelf is empty: " + shelf_path)
