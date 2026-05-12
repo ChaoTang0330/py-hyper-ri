@@ -8,22 +8,22 @@ loop.
 import torch
 import torch.distributed as dist
 
-from .interface.io import env_int
-from .interface.load_data import load_data_to_tensor
-from .measurement_operator import (
+from ..measurement_operator import (
     MeasOpFinufft,
     MeasOpHyperspectral,
     MeasOpPSF,
     MeasOpTkbn,
 )
-from .optimiser import FBAIRI, FBSARA, PDAIRI, FBHyperAIRI, FBHyperSARA
-from .regulariser import (
+from ..optimiser import FBAIRI, FBSARA, PDAIRI, FBHyperAIRI, FBHyperSARA
+from ..regulariser import (
     DenAIRI,
     DenHyperAIRI,
     ProxEllipsoid,
     ProxHyperSARAPos,
     ProxSARAPos,
 )
+from .io import env_int
+from .load_data import load_data_to_tensor
 
 
 def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> None:

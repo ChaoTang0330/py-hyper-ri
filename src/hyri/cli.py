@@ -2,9 +2,14 @@
 
 import json
 
-from .imager import imager
-from .interface import env_int, print_dict, set_imaging_params_ri
-from .interface.io import parsing_arguments, parsing_parameters
+from .interface import (
+    env_int,
+    imager,
+    parsing_arguments,
+    parsing_parameters,
+    print_dict,
+    set_imaging_params_ri,
+)
 
 
 def run_imager() -> None:
@@ -12,7 +17,7 @@ def run_imager() -> None:
 
     This function parses command-line arguments, loads and merges configuration
     parameters, converts them into imaging-specific parameter dictionaries, and
-    then launches :func:`.imager.imager`.
+    then launches :func:`.interface.imager`.
     """
 
     # Parse command-line arguments.
