@@ -66,9 +66,9 @@
             "im_min_itr": 100,
             "im_max_itr": 6000,
             "im_var_tol": 5e-5,
-            "itr_save": 2000,
+            "itr_save": 8000,
             "dnn_adaptive_peak_tol_max": 1e-1,
-            "dnn_adaptive_peak_tol_min": 1e-3,
+            "dnn_adaptive_peak_tol_min": 1e-5,
             "dnn_adaptive_peak_tol_step": 0.1
         },
         "cairi": {
@@ -85,9 +85,9 @@
             "im_min_itr": 100,
             "im_max_itr": 4000,
             "im_var_tol": 5e-5,
-            "itr_save": 2000,
+            "itr_save": 8000,
             "dnn_adaptive_peak_tol_max": 1e-1,
-            "dnn_adaptive_peak_tol_min": 1e-3,
+            "dnn_adaptive_peak_tol_min": 1e-5,
             "dnn_adaptive_peak_tol_step": 0.1
         },
         "hyperairi": {
@@ -104,10 +104,15 @@
             "im_min_itr": 100,
             "im_max_itr": 3000,
             "im_var_tol": 1e-5,
-            "itr_save": 5000,
+            "itr_save": 8000,
             "dnn_adaptive_peak_tol_max": 1e-1,
-            "dnn_adaptive_peak_tol_min": 1e-3,
-            "dnn_adaptive_peak_tol_step": 0.1
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1,
+            "spec_max_update_count": 50,
+            "spec_max_update_interval": 60,
+            "spec_update_tol_max": 1.6e-3,
+            "spec_update_tol_min": 1e-5,
+            "spec_update_tol_step": 0.5
         },
         "usara": {
             "denoiser_comment_1": "usara params",
@@ -122,7 +127,7 @@
             "im_max_outer_itr": 20,
             "im_var_tol": 1e-5,
             "im_var_outer_tol": 1e-4,
-            "reweighting_save": true
+            "reweighting_save": false
         },
         "hyper-usara": {
             "denoiser_comment_1": "hyper-usara params",
@@ -137,7 +142,7 @@
             "im_max_outer_itr": 20,
             "im_var_tol": 1e-5,
             "im_var_outer_tol": 1e-4,
-            "reweighting_save": true
+            "reweighting_save": false
         }
     }
 ]
