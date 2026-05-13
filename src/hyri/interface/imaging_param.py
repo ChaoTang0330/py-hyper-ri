@@ -83,8 +83,8 @@ def set_imaging_params_ri(
         and param_general["im_dim_y"] >= 1
     ):
         param_optimiser["img_size"] = (
-            int(param_general["im_dim_x"]),
             int(param_general["im_dim_y"]),
+            int(param_general["im_dim_x"]),
         )
     else:
         param_optimiser["img_size"] = (512, 512)
@@ -154,7 +154,6 @@ def set_imaging_params_ri(
     # Select backend package.
     if param_general.get("nufft_package", None) and param_general["nufft_package"] in [
         "finufft",
-        "pynufft",
         "tkbnufft",
     ]:
         param_measop["nufft_package"] = param_general["nufft_package"]

@@ -130,7 +130,7 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
     MeasOpClass = None
     if param_measop["nufft_package"] == "finufft":
         MeasOpClass = MeasOpFinufft
-    elif param_measop["nufft_package"] == "tkbn":
+    elif param_measop["nufft_package"] == "tkbnufft":
         MeasOpClass = MeasOpTkbn
     else:
         raise ValueError(
