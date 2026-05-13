@@ -1,0 +1,149 @@
+[
+    {
+        "__comment": "Main",
+        "main": {
+            "src_name": [],
+            "data_file": [],
+            "result_path": [],
+            "algorithm": "usara",
+            "im_dim_x": 512,
+            "im_dim_y": 512,
+            "ch_start": 1,
+            "ch_last": 36,
+            "ch_effective": 36,
+            "ch_partition": [],
+            "im_pixel_size": [],
+            "superresolution": 1.5,
+            "run_id": []
+        }
+    },
+    {
+        "__comment": "General",
+        "flag": {
+            "flag_comment_1": "flags",
+            "flag_imaging": true,
+            "flag_data_weighting": true,
+            "invert_uvw_flag": false,
+            "verbose": true
+        },
+        "weighting": {
+            "weighting_comment_1": "weighting",
+            "weight_load": false,
+            "weight_type": "briggs",
+            "weight_robustness": 0,
+            "weight_gridsize": 2
+        },
+        "computing": {
+            "computing_comment_1": "computing resources",
+            "meas_device": "cpu",
+            "meas_dtype": "double",
+            "regulariser_device": "cpu",
+            "regulariser_dtype": "single",
+            "dist_backend": "gloo",
+            "dist_init_method": "env://"
+
+        },
+        "nufft": {
+            "nufft_comment_1": "nufft settings",
+            "nufft_package": "finufft",
+            "nufft_mode": []
+        }
+    },
+    {
+        "__comment": "Regularisers",
+        "airi": {
+            "regulariser_comment_1": "airi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "shelf_airi_oaid.csv",
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true,
+            "approx_meas_op": false
+        },
+        "airi_default": {
+            "regulariser_comment_2": "airi default params",
+            "im_min_itr": 100,
+            "im_max_itr": 6000,
+            "im_var_tol": 5e-5,
+            "itr_save": 8000,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1
+        },
+        "cairi": {
+            "regulariser_comment_1": "cairi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "shelf_airi_oaid.csv",
+            "precond_flag": true,
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true
+        },
+        "cairi_default": {
+            "regulariser_comment_2": "cairi default params",
+            "im_min_itr": 100,
+            "im_max_itr": 4000,
+            "im_var_tol": 5e-5,
+            "itr_save": 8000,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1
+        },
+        "hyperairi": {
+            "regulariser_comment_1": "hyperairi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "shelf_hyperairi_mix.csv",
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true,
+            "approx_meas_op": false,
+            "spec_update": true,
+            "spec_idx_init": "zero"
+        },
+        "hyperairi_default": {
+            "regulariser_comment_2": "hyperairi default params",
+            "im_min_itr": 100,
+            "im_max_itr": 3000,
+            "im_var_tol": 1e-5,
+            "itr_save": 8000,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-5,
+            "dnn_adaptive_peak_tol_step": 0.1,
+            "spec_max_update_count": 50,
+            "spec_max_update_interval": 60,
+            "spec_update_tol_max": 1.6e-3,
+            "spec_update_tol_min": 1e-5,
+            "spec_update_tol_step": 0.5
+        },
+        "usara": {
+            "regulariser_comment_1": "usara params",
+            "heu_reg_param_scale": 1.0,
+            "reweighting": true,
+            "approx_meas_op": false
+        },
+        "usara_default": {
+            "regulariser_comment_2": "usara default params",
+            "im_min_itr": 20,
+            "im_max_itr": 2000,
+            "im_max_outer_itr": 20,
+            "im_var_tol": 1e-5,
+            "im_var_outer_tol": 1e-4,
+            "reweighting_save": false
+        },
+        "hyper-usara": {
+            "regulariser_comment_1": "hyper-usara params",
+            "heu_reg_param_scale": 1.0,
+            "reweighting": true,
+            "approx_meas_op": false
+        },
+        "hyper-usara_default": {
+            "regulariser_comment_2": "hyper-usara default params",
+            "im_min_itr": 20,
+            "im_max_itr": 2000,
+            "im_max_outer_itr": 20,
+            "im_var_tol": 1e-5,
+            "im_var_outer_tol": 1e-4,
+            "reweighting_save": false
+        }
+    }
+]

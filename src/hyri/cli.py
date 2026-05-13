@@ -1,16 +1,5 @@
 """Parse user inputs and launch the imaging workflow."""
 
-import json
-
-from .interface import (
-    env_int,
-    imager,
-    parsing_arguments,
-    parsing_parameters,
-    print_dict,
-    set_imaging_params_ri,
-)
-
 
 def run_imager() -> None:
     """Run the command-line imaging entry point.
@@ -19,6 +8,16 @@ def run_imager() -> None:
     parameters, converts them into imaging-specific parameter dictionaries, and
     then launches :func:`.interface.imager`.
     """
+    import json
+
+    from .interface import (
+        env_int,
+        imager,
+        parsing_arguments,
+        parsing_parameters,
+        print_dict,
+        set_imaging_params_ri,
+    )
 
     # Parse command-line arguments.
     input_args = parsing_arguments()
@@ -44,6 +43,13 @@ def run_imager() -> None:
 
     # Launch the main imaging workflow.
     imager(param_optimiser, param_measop, param_proxop)
+
+
+def run_config() -> None:
+    """Run the interactive configuration creator."""
+    from .interface import create_config
+
+    create_config()
 
 
 if __name__ == "__main__":

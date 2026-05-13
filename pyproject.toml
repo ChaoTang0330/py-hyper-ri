@@ -54,10 +54,12 @@ ms = [
 hyri = [
     "airi_denoisers/*.csv",
     "airi_denoisers/**/*.onnx",
+    "config/*.json",
 ]
 
 [project.scripts]
 hyri-imaging = "hyri.cli:run_imager"
+hyri-config = "hyri.cli:run_config"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -78,7 +80,7 @@ ignore = []
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["test"]
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["test_*.py"]
 addopts = "-ra"
 pythonpath = ["src"]
 filterwarnings = [

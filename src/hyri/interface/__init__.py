@@ -6,6 +6,7 @@ imaging-weight generation, spectral-index calculations, and distributed
 channel-gather operations.
 """
 
+from .create_config import create_config
 from .dist_util import gather_ch_to_tensor
 from .gen_imaging_weights import gen_imaging_weights
 from .imager import imager
@@ -22,6 +23,7 @@ from .load_data import load_data_to_tensor
 from .spectral_index import fit_clean_beam, get_spec_idx
 
 __all__ = [
+    "create_config",
     "env_int",
     "fit_clean_beam",
     "gen_imaging_weights",

@@ -53,6 +53,7 @@ logs/
 !test/data/*/*.mat
 !test/data/*/*.fits
 !config/*.json
+!src/hyri/config/*.json
 !requirements.txt
 !tutorial_airi_python.ipynb
 !tutorial_usara_python.ipynb
