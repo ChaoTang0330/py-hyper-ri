@@ -12,12 +12,12 @@ def run_imager() -> None:
 
     from .interface import (
         env_int,
-        imager,
         parsing_arguments,
         parsing_parameters,
         print_dict,
         set_imaging_params_ri,
     )
+    from .interface.imager import imager
 
     # Parse command-line arguments.
     input_args = parsing_arguments()
@@ -47,7 +47,7 @@ def run_imager() -> None:
 
 def run_config() -> None:
     """Run the interactive configuration creator."""
-    from .interface import create_config
+    from .interface.create_config import create_config
 
     create_config()
 
