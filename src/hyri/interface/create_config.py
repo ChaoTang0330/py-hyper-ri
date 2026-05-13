@@ -180,62 +180,93 @@ def ask_config_questions(
     """
     answers: dict[str, Any] = {"updates": []}
     updates: list[ConfigUpdate] = answers["updates"]
+    sections = config_sections(config)
 
-    updates.extend(ask_data_questions(config))
-    updates.extend(ask_general_questions(config))
-    updates.extend(ask_compute_questions(config))
+    if ask_until_valid(
+        "Configure data options",
+        True,
+        parse_bool,
+        "Show data, image grid, and channel settings.",
+    ):
+        updates.extend(ask_data_questions(config))
+    if ask_until_valid(
+        "Configure imaging weighting options",
+        True,
+        parse_bool,
+        "Show data-weighting and imaging-weight settings.",
+    ):
+        updates.extend(ask_weighting_questions(config))
+    if ask_until_valid(
+        "Configure general options",
+        True,
+        parse_bool,
+        "Show output, run-metadata, and common flag settings.",
+    ):
+        updates.extend(ask_general_questions(config))
+    if ask_until_valid(
+        "Configure compute options",
+        True,
+        parse_bool,
+        "Show device, data type, and distributed-computing settings.",
+    ):
+        updates.extend(ask_compute_questions(config))
     if ask_until_valid(
         "Configure measurement operator options",
         False,
         parse_bool,
-        "Show NUFFT and weighting questions.",
+        "Show NUFFT settings.",
     ):
         updates.extend(ask_measurement_operator_questions(config))
 
     algorithm = ask_choice(
         "Algorithm",
         ALGORITHMS,
-        config_sections(config)["main"]["algorithm"],
+        sections["main"]["algorithm"],
         "Reconstruction method to configure.",
     )
     updates.append(("main", "algorithm", algorithm))
 
-    if algorithm in SARA_ALGORITHMS:
-        updates.extend(ask_sara_family_questions(config, algorithm))
-    if algorithm in AIRI_ALGORITHMS:
-        updates.extend(ask_airi_family_questions(config, algorithm))
-    if algorithm == "hyperairi":
-        updates.extend(ask_hyperairi_questions(config))
-    if algorithm in CONSTRAINED_ALGORITHMS:
-        updates.extend(ask_constrained_questions(config, algorithm))
-    if algorithm in UNCONSTRAINED_ALGORITHMS:
-        updates.extend(ask_unconstrained_questions(config, algorithm))
+    if ask_until_valid(
+        "Configure algorithm-specific options",
+        True,
+        parse_bool,
+        "Show settings for the selected reconstruction algorithm.",
+    ):
+        if algorithm in SARA_ALGORITHMS:
+            updates.extend(ask_sara_family_questions(config, algorithm))
+        if algorithm in AIRI_ALGORITHMS:
+            updates.extend(ask_airi_family_questions(config, algorithm))
+        if algorithm == "hyperairi":
+            updates.extend(ask_hyperairi_questions(config))
+        if algorithm in CONSTRAINED_ALGORITHMS:
+            updates.extend(ask_constrained_questions(config, algorithm))
+        if algorithm in UNCONSTRAINED_ALGORITHMS:
+            updates.extend(ask_unconstrained_questions(config, algorithm))
 
     return answers
 
 
 def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
-    """Ask data, image-grid, channel, and weighting questions.
+    """Ask data, image-grid, and channel questions.
 
     Args:
         config (list[dict[str, Any]]): Configuration template used for default
             answers.
 
     Returns:
-        list[ConfigUpdate]: Updates for data, image, channel, flag, and
-            weighting sections.
+        list[ConfigUpdate]: Updates for data, image, and channel settings.
 
     Raises:
         RuntimeError: If interactive input ends before these questions finish.
     """
-    main = config_sections(config)["main"]
+    sections = config_sections(config)
     updates = [
         (
             "main",
             "data_file",
             ask_str(
                 "Input measurement data path",
-                main["data_file"],
+                sections["main"]["data_file"],
             ),
         ),
         (
@@ -243,7 +274,7 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "im_dim_x",
             ask_int(
                 "Image width",
-                main["im_dim_x"],
+                sections["main"]["im_dim_x"],
                 minimum=1,
             ),
         ),
@@ -252,7 +283,7 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "im_dim_y",
             ask_int(
                 "Image height",
-                main["im_dim_y"],
+                sections["main"]["im_dim_y"],
                 minimum=1,
             ),
         ),
@@ -260,7 +291,7 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
 
     im_pixel_size = ask_until_valid(
         "Pixel size in arcsec",
-        main["im_pixel_size"],
+        sections["main"]["im_pixel_size"],
         lambda text: parse_optional_float(text, minimum=0.0),
         "Leave empty to infer it from superresolution.",
     )
@@ -272,7 +303,7 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
                 "superresolution",
                 ask_float(
                     "Super resolution factor",
-                    main["superresolution"],
+                    sections["main"]["superresolution"],
                     minimum=1.0,
                 ),
             )
@@ -282,12 +313,12 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
 
     ch_start = ask_int(
         "First physical channel index",
-        main["ch_start"],
+        sections["main"]["ch_start"],
         minimum=1,
     )
     ch_last = ask_until_valid(
         "Last physical channel index",
-        main["ch_last"],
+        sections["main"]["ch_last"],
         lambda text: parse_optional_int(text, minimum=ch_start),
         "Leave this field empty to use all physical channels.",
     )
@@ -300,7 +331,7 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
                 "ch_effective",
                 ask_int(
                     "Number of effective channels",
-                    main["ch_effective"],
+                    sections["main"]["ch_effective"],
                     "Number of channels for the reconstructed image.",
                     minimum=1,
                 ),
@@ -310,61 +341,10 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
                 "ch_partition",
                 ask_optional_int_list(
                     "Physical channel partition",
-                    main["ch_partition"],
+                    sections["main"]["ch_partition"],
                     "Number of physical channels per effective channel; "
                     "leave empty to be evenly partitioned.",
                     minimum=1,
-                ),
-            ),
-        ]
-    )
-    updates.extend(
-        [
-            (
-                "flag",
-                "flag_data_weighting",
-                ask_until_valid(
-                    "Enable data weighting",
-                    config_sections(config)["flag"]["flag_data_weighting"],
-                    parse_bool,
-                    "Apply imaging weighting for measurement operators.",
-                ),
-            ),
-            (
-                "weighting",
-                "weight_load",
-                ask_until_valid(
-                    "Load weights from data file",
-                    config_sections(config)["weighting"]["weight_load"],
-                    parse_bool,
-                ),
-            ),
-            (
-                "weighting",
-                "weight_type",
-                ask_choice(
-                    "Imaging weight type",
-                    WEIGHT_TYPES,
-                    config_sections(config)["weighting"]["weight_type"],
-                    "It can be 'briggs' for Briggs weighting or 'uniform' "
-                    "for uniform weighting.",
-                ),
-            ),
-            (
-                "weighting",
-                "weight_robustness",
-                ask_float(
-                    "Briggs weight robustness factor",
-                    config_sections(config)["weighting"]["weight_robustness"],
-                ),
-            ),
-            (
-                "weighting",
-                "weight_gridsize",
-                ask_float(
-                    "Imaging weight grid size",
-                    config_sections(config)["weighting"]["weight_gridsize"],
-                    minimum=0.0,
                 ),
             ),
             (
@@ -372,13 +352,81 @@ def ask_data_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
                 "invert_uvw_flag",
                 ask_until_valid(
                     "Invert the flag for the uvw coordinates",
-                    config_sections(config)["flag"]["invert_uvw_flag"],
+                    sections["flag"]["invert_uvw_flag"],
                     parse_bool,
                     "By default, the uvw coordinates are ignored if the associated "
                     "data flag is True. Enable this option to invert this logic",
                 ),
             ),
         ]
+    )
+    return updates
+
+
+def ask_weighting_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
+    """Ask imaging-weighting questions.
+
+    Args:
+        config (list[dict[str, Any]]): Configuration template used for default
+            answers.
+
+    Returns:
+        list[ConfigUpdate]: Updates for data-weighting flags and imaging-weight
+            settings.
+
+    Raises:
+        RuntimeError: If interactive input ends before these questions finish.
+    """
+    sections = config_sections(config)
+    updates: list[ConfigUpdate] = []
+    flag_data_weighting = ask_until_valid(
+        "Enable data weighting",
+        sections["flag"]["flag_data_weighting"],
+        parse_bool,
+        "Apply imaging weighting for measurement operators.",
+    )
+    updates.append(("flag", "flag_data_weighting", flag_data_weighting))
+    if not flag_data_weighting:
+        return updates
+
+    weight_load = ask_until_valid(
+        "Load weights from data file",
+        sections["weighting"]["weight_load"],
+        parse_bool,
+    )
+    updates.append(("weighting", "weight_load", weight_load))
+    if weight_load:
+        return updates
+
+    weight_type = ask_choice(
+        "Imaging weight type",
+        WEIGHT_TYPES,
+        sections["weighting"]["weight_type"],
+        "It can be 'briggs' for Briggs weighting or 'uniform' "
+        "for uniform weighting.",
+    )
+    updates.append(("weighting", "weight_type", weight_type))
+    if weight_type == "briggs":
+        updates.append(
+            (
+                "weighting",
+                "weight_robustness",
+                ask_float(
+                    "Briggs weight robustness factor",
+                    sections["weighting"]["weight_robustness"],
+                ),
+            )
+        )
+    updates.append(
+        (
+            "weighting",
+            "weight_gridsize",
+            ask_float(
+                "Imaging weight grid size",
+                sections["weighting"]["weight_gridsize"],
+                minimum=0.0,
+            ),
+        ),
     )
     return updates
 
@@ -397,13 +445,14 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
     Raises:
         RuntimeError: If interactive input ends before these questions finish.
     """
+    sections = config_sections(config)
     return [
         (
             "main",
             "result_path",
             ask_str(
                 "Result path",
-                config_sections(config)["main"]["result_path"],
+                sections["main"]["result_path"],
                 "Directory where imaging results will be saved.",
             ),
         ),
@@ -412,7 +461,7 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "src_name",
             ask_str(
                 "Source name",
-                config_sections(config)["main"]["src_name"],
+                sections["main"]["src_name"],
                 "Optional source tag used in output names.",
             ),
         ),
@@ -421,7 +470,7 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "run_id",
             ask_until_valid(
                 "Run ID",
-                config_sections(config)["main"]["run_id"],
+                sections["main"]["run_id"],
                 lambda text: parse_optional_int(text),
                 "Optional numeric run identifier.",
             ),
@@ -431,7 +480,7 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "flag_imaging",
             ask_until_valid(
                 "Enable imaging",
-                config_sections(config)["flag"]["flag_imaging"],
+                sections["flag"]["flag_imaging"],
                 parse_bool,
                 "Disable to generate dirty image and PSF only.",
             ),
@@ -441,7 +490,7 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "verbose",
             ask_until_valid(
                 "Verbose output",
-                config_sections(config)["flag"]["verbose"],
+                sections["flag"]["verbose"],
                 parse_bool,
                 "Print effective parameters when running.",
             ),
@@ -459,33 +508,37 @@ def ask_measurement_operator_questions(
             answers.
 
     Returns:
-        list[ConfigUpdate]: Updates for NUFFT package and mode options.
+        list[ConfigUpdate]: Updates for the NUFFT package and, when using
+            TorchKbNUFFT, the NUFFT mode.
 
     Raises:
         RuntimeError: If interactive input ends before these questions finish.
     """
-    return [
-        (
-            "nufft",
-            "nufft_package",
-            ask_choice(
-                "NUFFT package",
-                NUFFT_PACKAGES,
-                config_sections(config)["nufft"]["nufft_package"],
-                "NUFFT backend used for the measurement operators.",
-            ),
-        ),
-        (
-            "nufft",
-            "nufft_mode",
-            ask_choice(
-                "NUFFT mode",
-                NUFFT_MODES,
-                config_sections(config)["nufft"]["nufft_mode"],
-                "Interpolation mode for TorchKbNUFFT. It can be 'table' or 'matrix'.",
-            ),
-        ),
-    ]
+    sections = config_sections(config)
+    nufft = sections["nufft"]
+    updates: list[ConfigUpdate] = []
+    nufft_package = ask_choice(
+        "NUFFT package",
+        NUFFT_PACKAGES,
+        nufft["nufft_package"],
+        "NUFFT backend used for the measurement operators.",
+    )
+    updates.append(("nufft", "nufft_package", nufft_package))
+    if nufft_package == "tkbnufft":
+        updates.append(
+            (
+                "nufft",
+                "nufft_mode",
+                ask_choice(
+                    "NUFFT mode",
+                    NUFFT_MODES,
+                    nufft["nufft_mode"],
+                    "Interpolation mode for TorchKbNUFFT. It can be 'table' "
+                    "or 'matrix'.",
+                ),
+            )
+        )
+    return updates
 
 
 def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
@@ -502,6 +555,7 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
     Raises:
         RuntimeError: If interactive input ends before these questions finish.
     """
+    sections = config_sections(config)
     return [
         (
             "computing",
@@ -509,7 +563,7 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_choice(
                 "Measurement device",
                 DEVICES,
-                config_sections(config)["computing"]["meas_device"],
+                sections["computing"]["meas_device"],
                 "Device used by measurement operators.",
             ),
         ),
@@ -519,7 +573,7 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_choice(
                 "Regulariser device",
                 DEVICES,
-                config_sections(config)["computing"]["regulariser_device"],
+                sections["computing"]["regulariser_device"],
                 "Device used by regularisers.",
             ),
         ),
@@ -529,7 +583,7 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_choice(
                 "Measurement dtype",
                 DTYPES,
-                config_sections(config)["computing"]["meas_dtype"],
+                sections["computing"]["meas_dtype"],
                 "Numeric precision for measurement operators.",
             ),
         ),
@@ -539,7 +593,7 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_choice(
                 "Regulariser dtype",
                 DTYPES,
-                config_sections(config)["computing"]["regulariser_dtype"],
+                sections["computing"]["regulariser_dtype"],
                 "Numeric precision for regularisers.",
             ),
         ),
@@ -549,9 +603,9 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_choice(
                 "PyTorch distributed backend",
                 DIST_BACKENDS,
-                config_sections(config)["computing"]["dist_backend"],
+                sections["computing"]["dist_backend"],
                 "PyTorch supports 4 backends. Normally, gloo is paried with CPU, "
-                "NCCL with CUDA and XCCL with XPU. \n"
+                "NCCL with CUDA and XCCL with XPU. "
                 "See https://docs.pytorch.org/docs/stable/distributed.html"
                 "#which-backend-to-use for details.",
             ),
@@ -561,9 +615,9 @@ def ask_compute_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "dist_init_method",
             ask_str(
                 "PyTorch distributed initialisation method",
-                config_sections(config)["computing"]["dist_init_method"],
+                sections["computing"]["dist_init_method"],
                 "It is a URL string passed to torch.distributed indicating where "
-                "and how to discover peers. \n"
+                "and how to discover peers. "
                 "See https://docs.pytorch.org/docs/stable/distributed.html"
                 "#torch.distributed.init_process_group for details.",
             ),
@@ -622,7 +676,8 @@ def print_config_created(output_path: str, config: list[dict[str, Any]]) -> None
     """
     print(f"\nWrote {output_path}", flush=True)
     print("\nRun with:", flush=True)
-    data_file = config_sections(config)["main"].get("data_file")
+    sections = config_sections(config)
+    data_file = sections["main"].get("data_file")
     if is_empty_value(data_file):
         print(f"  hyri-imaging --config {output_path} --data_file <path>", flush=True)
         print(
@@ -803,13 +858,14 @@ def ask_hyperairi_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
     Raises:
         RuntimeError: If interactive input ends before these questions finish.
     """
+    section = config_sections(config)["hyperairi"]
     return [
         (
             "hyperairi",
             "spec_update",
             ask_until_valid(
                 "Update spectral index",
-                config_sections(config)["hyperairi"]["spec_update"],
+                section["spec_update"],
                 parse_bool,
                 "Enable adaptive spectral-index map updates for HyperAIRI.",
             ),
@@ -819,7 +875,7 @@ def ask_hyperairi_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             "spec_idx_init",
             ask_until_valid(
                 "Spectral-index map initialisation",
-                config_sections(config)["hyperairi"]["spec_idx_init"],
+                section["spec_idx_init"],
                 parse_spec_idx_init,
                 "It can be 'zero' for a flat spectral index map, "
                 "'dirty' for inferring from the dirty image cube, "
