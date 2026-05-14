@@ -462,7 +462,8 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
             ask_str(
                 "Source name",
                 sections["main"]["src_name"],
-                "Optional source tag used in output names.",
+                "Source tag used in output folder names. The input data folder name "
+                "is used if this field is empty.",
             ),
         ),
         (
@@ -472,7 +473,8 @@ def ask_general_questions(config: list[dict[str, Any]]) -> list[ConfigUpdate]:
                 "Run ID",
                 sections["main"]["run_id"],
                 lambda text: parse_optional_int(text),
-                "Optional numeric run identifier.",
+                "This numeric run identifier will be used in output folder names "
+                "if specified.",
             ),
         ),
         (

@@ -4,7 +4,7 @@
         "main": {
             "src_name": [],
             "data_file": [],
-            "result_path": [],
+            "result_path": "results",
             "algorithm": "usara",
             "im_dim_x": 512,
             "im_dim_y": 512,
