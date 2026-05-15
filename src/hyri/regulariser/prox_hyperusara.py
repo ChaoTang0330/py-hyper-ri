@@ -77,8 +77,8 @@ class ProxHyperSARAPos(Regulariser):
     References:
         Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026).
         `HyperAIRI: a plug-and-play algorithm for precise hyperspectral image
-        reconstruction in radio interferometry`__. *ApJS, 283*(1), 9.
-        __ https://doi.org/10.3847/1538-4365/ae3149
+        reconstruction in radio interferometry
+        <https://doi.org/10.3847/1538-4365/ae3149>`_. *ApJS*, 283(1), 9.
 
         Combettes, P. L., & Pesquet, J.-C. (2011). `Proximal splitting methods
         in signal processing <https://doi.org/10.1007/978-1-4419-9569-8_10>`_.

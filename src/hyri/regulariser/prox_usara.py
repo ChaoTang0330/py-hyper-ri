@@ -74,7 +74,7 @@ class ProxSARAPos(Regulariser):
         Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
         reconstruction algorithms in radio interferometry: From handcrafted to
         learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
-        *MNRAS, 518*(1), 604-622.
+        *MNRAS*, 518(1), 604-622.
 
         Combettes, P. L., & Pesquet, J.-C. (2011). `Proximal splitting methods
         in signal processing <https://doi.org/10.1007/978-1-4419-9569-8_10>`_.

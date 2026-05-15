@@ -260,12 +260,12 @@ class PrimalDualPrecond(Optimiser):
             Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
             reconstruction algorithms in radio interferometry: From handcrafted to
             learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
-            *MNRAS, 518*(1), 604-622.
+            *MNRAS*, 518(1), 604-622.
 
             Wilber, A. G., Dabbech, A., Jackson, A., & Wiaux, Y. (2023). `Scalable
             precision wide-field imaging in radio interferometry: I. uSARA
             validated on ASKAP data <https://doi.org/10.1093/mnras/stad1351>`_.
-            *MNRAS, 522*(4), 5558-5575.
+            *MNRAS*, 522(4), 5558-5575.
         """
         self._heuristic = 1.0 / torch.sqrt(2 * self._meas_op.get_op_norm_ch())
         if self._verbose:

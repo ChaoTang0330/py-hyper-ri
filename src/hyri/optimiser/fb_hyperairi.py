@@ -88,7 +88,7 @@ class FBHyperAIRI(ForwardBackward):
         Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026). `HyperAIRI: A
         Plug-and-play Algorithm for Precise Hyperspectral Image Reconstruction
         in Radio Interferometry <https://doi.org/10.3847/1538-4365/ae3149>`_.
-        *The Astrophysical Journal Supplement Series, 283*(1), 9.
+        *The Astrophysical Journal Supplement Series*, 283(1), 9.
     """
 
     def __init__(

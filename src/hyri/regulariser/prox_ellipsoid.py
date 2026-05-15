@@ -67,7 +67,7 @@ class ProxEllipsoid(Regulariser):
     References:
         Onose, A., Dabbech, A., & Wiaux, Y. (2017). `An accelerated splitting
         algorithm for radio-interferometric imaging: when natural and uniform
-        weighting meet <https://doi.org/10.1093/mnras/stx755>`_. *MNRAS, 469*(1),
+        weighting meet <https://doi.org/10.1093/mnras/stx755>`_. *MNRAS*, 469(1),
         938-949.
     """
 

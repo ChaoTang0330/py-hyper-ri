@@ -4,9 +4,10 @@
 def run_imager() -> None:
     """Run the command-line imaging entry point.
 
-    This function parses command-line arguments, loads and merges configuration
-    parameters, converts them into imaging-specific parameter dictionaries, and
-    then launches :func:`.interface.imager`.
+    This function is linked to the command-line entry point ``hyri-imaging``. It parses
+    command-line arguments, loads and merges configuration parameters, converts
+    them into imaging-specific parameter dictionaries, and then launches
+    :func:`.interface.imager.imager`.
     """
     import json
 
@@ -46,7 +47,14 @@ def run_imager() -> None:
 
 
 def run_config() -> None:
-    """Run the interactive configuration creator."""
+    """Run the command-line configuration entry point.
+
+    This function is linked to the command-line entry point ``hyri-config``. It launches
+    the interactive configuration creator
+    :func:`.interface.create_config.create_config`. This allows users to fetch the
+    default configuration template, or interactively create a new configuration file
+    by answering a series of questions.
+    """
     from .interface.create_config import create_config
 
     create_config()

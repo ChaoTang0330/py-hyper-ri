@@ -68,7 +68,7 @@ class FBAIRI(ForwardBackward):
         Terris, M., Dabbech, A., Tang, C., & Wiaux, Y. (2023). `Image
         reconstruction algorithms in radio interferometry: From handcrafted to
         learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
-        *MNRAS, 518*(1), 604-622.
+        *MNRAS*, 518(1), 604-622.
     """
 
     def __init__(

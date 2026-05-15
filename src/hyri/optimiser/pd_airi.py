@@ -69,7 +69,7 @@ class PDAIRI(PrimalDualPrecond):
         Terris, M., Tang, C., Jackson, A., & Wiaux, Y. (2025). `The AIRI
         plug-and-play algorithm for image reconstruction in radio-
         interferometry: variations and robustness
-        <https://doi.org/10.1093/mnras/staf022>`_. *MNRAS, 537*(2), 1608-1619.
+        <https://doi.org/10.1093/mnras/staf022>`_. *MNRAS*, 537(2), 1608-1619.
     """
 
     def __init__(

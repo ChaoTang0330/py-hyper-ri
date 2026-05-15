@@ -98,8 +98,8 @@ class DenHyperAIRI(Regulariser):
     References:
         Tang, C., Dabbech, A., Jackson, A., & Wiaux, Y. (2026).
         `HyperAIRI: a plug-and-play algorithm for precise hyperspectral image
-        reconstruction in radio interferometry`__. *ApJS, 283*(1), 9.
-        __ https://doi.org/10.3847/1538-4365/ae3149
+        reconstruction in radio interferometry
+        <https://doi.org/10.3847/1538-4365/ae3149>`_. *ApJS*, 283(1), 9.
     """
 
     def __init__(
