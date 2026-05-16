@@ -49,6 +49,49 @@ p.rubric,
   margin-left: 0;
 }
 
+.prev-next-footer {
+  display: block !important;
+  margin-top: 2rem;
+}
+
+.prev-next-subtitle {
+  text-transform: capitalize;
+}
+
+.bd-footer {
+  display: block !important;
+  margin-top: 2rem;
+}
+
+.bd-footer__inner {
+  border-top: 1px solid var(--pst-color-border);
+  padding-bottom: 1.25rem;
+  padding-top: 1rem;
+}
+
+.footer-items__start,
+.footer-items__end {
+  font-size: 0.85rem;
+}
+
+.sphinx-theme-versions {
+  margin-bottom: 0;
+}
+
+.github-source-link {
+  margin-top: 1rem;
+}
+
+.github-source-link a {
+  color: var(--pst-color-text-muted);
+  text-decoration: none;
+}
+
+.github-source-link a:hover {
+  color: var(--pst-color-link-hover);
+  text-decoration: underline;
+}
+
 /* Make note admonitions visually close to the PyTorch documentation style. */
 .admonition.note,
 .admonition-notes {

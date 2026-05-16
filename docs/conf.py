@@ -85,12 +85,30 @@ pygments_style = "sphinx"
 
 html_theme_options = {
     "pytorch_project": "docs",
+    "logo": {"text": "pyHyperAIRI"},
     "collapse_navigation": False,
     "display_version": True,
+    "show_prev_next": True,
+    "header_links_before_dropdown": 10,
     "article_header_end": [],
     "article_footer_items": [],
+    "footer_start": ["copyright"],
+    "footer_end": ["sphinx-theme-versions.html"],
     "navbar_end": ["search-field", "theme-switcher", "navbar-icon-links"],
-    "secondary_sidebar_items": ["page-toc"],
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "PyPI",
+            # TODO: Replace this with the package's PyPI project URL once it is available.
+            "url": "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs",
+            "icon": "fa-brands fa-python",
+        },
+    ],
+    "secondary_sidebar_items": ["page-toc", "github-source.html"],
     "show_lf_footer": False,
     "show_pytorch_org_link": False,
     "use_edit_page_button": False,
@@ -120,6 +138,46 @@ external_module_links = {
     "torchkbnufft": "https://torchkbnufft.readthedocs.io/en/stable/",
 }
 
+github_source_base = (
+    "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/blob/main/"
+)
+
+
+def _github_path_for_page(pagename, context):
+    page_source_map = {
+        "api/cli": "src/hyri/cli.py",
+        "api/interface": "src/hyri/interface/__init__.py",
+        "api/measurement_operator": "src/hyri/measurement_operator/__init__.py",
+        "api/optimiser": "src/hyri/optimiser/__init__.py",
+        "api/regulariser": "src/hyri/regulariser/__init__.py",
+    }
+    if pagename in page_source_map:
+        return page_source_map[pagename]
+
+    if pagename.startswith("api/generated/"):
+        module_name = pagename.removeprefix("api/generated/")
+        module_path = SRC / f"{module_name.replace('.', '/')}.py"
+        package_path = SRC / module_name.replace(".", "/") / "__init__.py"
+        if module_path.exists():
+            return module_path.relative_to(ROOT).as_posix()
+        if package_path.exists():
+            return package_path.relative_to(ROOT).as_posix()
+
+    sourcename = context.get("sourcename")
+    if sourcename:
+        docs_source_path = ROOT / "docs" / sourcename
+        if docs_source_path.exists():
+            return docs_source_path.relative_to(ROOT).as_posix()
+
+    return None
+
+
+def _add_github_source_url(app, pagename, templatename, context, doctree):
+    github_path = _github_path_for_page(pagename, context)
+    context["github_source_url"] = (
+        f"{github_source_base}{github_path}" if github_path is not None else None
+    )
+
 
 def _rename_notes_to_note(app, doctree, docname):
     for admonition in doctree.findall(nodes.admonition):
@@ -146,5 +204,6 @@ def _resolve_external_modules(app, env, node, contnode):
 
 
 def setup(app):
+    app.connect("html-page-context", _add_github_source_url)
     app.connect("doctree-resolved", _rename_notes_to_note)
     app.connect("missing-reference", _resolve_external_modules)
