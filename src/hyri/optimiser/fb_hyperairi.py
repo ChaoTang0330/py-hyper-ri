@@ -177,7 +177,7 @@ class FBHyperAIRI(ForwardBackward):
             iter_save (int, optional): Save interval for intermediate FITS
                 products. Default: 1000.
 
-        Notes:
+        Note:
             When ``meas_op_approx`` is provided, the approximate operator is
             used in the iterative forward step while ``meas_op`` remains the
             reference operator for dirty-image, PSF, clean-beam, and heuristic

@@ -40,7 +40,7 @@ def gen_imaging_weights(
     Raises:
         NotImplementedError: If ``weight_type`` is unsupported.
 
-    Notes:
+    Note:
         Coordinates are mirrored to the upper half-plane before gridding to
         exploit conjugate symmetry. ``natural_weight`` may be scalar-like or
         per-visibility; a scalar-like input is broadcast to all samples.
@@ -155,7 +155,7 @@ def gen_imaging_weights_np(
     Raises:
         NotImplementedError: If ``weight_type`` is unsupported.
 
-    Notes:
+    Note:
         Coordinates are mirrored to the upper half-plane before gridding to
         exploit conjugate symmetry. ``natural_weight`` is required for
         ``"briggs"`` and ``"robust"`` weighting.

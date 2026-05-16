@@ -155,7 +155,7 @@ class MeasOpNUFFT(MeasOp):
         Args:
             precond_weight (torch.Tensor): Preconditioning tensor.
 
-        Notes:
+        Note:
             Updating this tensor invalidates the cached operator norm.
         """
         self._precond_weight = precond_weight.to(

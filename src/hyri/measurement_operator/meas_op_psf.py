@@ -121,7 +121,7 @@ class MeasOpPSF(MeasOp):
         Returns:
             torch.Tensor: Unmodified input tensor.
 
-        Notes:
+        Note:
             This class approximate the compound forward-adjoint operation with
             convolution with PSF. The forward operation is set to identity
             to ensure a consistent measuerement operator interface.
@@ -138,7 +138,7 @@ class MeasOpPSF(MeasOp):
         Returns:
             torch.Tensor: Convolved image cropped back to the target FoV.
 
-        Notes:
+        Note:
             The input is zero-padded implicitly through the FFT size argument,
             multiplied by the cached PSF spectrum, and cropped to the central
             field of view after inverse FFT.

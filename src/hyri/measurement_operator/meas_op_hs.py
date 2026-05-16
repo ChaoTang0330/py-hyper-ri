@@ -102,7 +102,7 @@ class MeasOpHyperspectral(MeasOp):
             **kwargs: Additional backend-specific arguments forwarded to
                 ``meas_op_class``.
 
-        Notes:
+        Note:
             Each process constructs operators only for its local channel subset.
             When ``torch.distributed`` is active, global channel counts are
             gathered so distributed norm estimates can combine contributions
@@ -207,7 +207,7 @@ class MeasOpHyperspectral(MeasOp):
             Tuple[torch.Tensor, ...]: Tuple of measurement-domain tensors, one
             per local channel.
 
-        Notes:
+        Note:
             The channel dimension of ``x`` is split across the locally owned
             monochromatic operators in index order.
         """
@@ -228,7 +228,7 @@ class MeasOpHyperspectral(MeasOp):
             torch.Tensor: Reconstructed local image cube with shape
             ``(1, C_rank, H, W)``.
 
-        Notes:
+        Note:
             The input tuple must contain one measurement tensor per local
             channel in the same order used during construction.
         """
@@ -265,7 +265,7 @@ class MeasOpHyperspectral(MeasOp):
         Returns:
             float: Estimated spectral norm.
 
-        Notes:
+        Note:
             In distributed runs, the power iteration uses an all-reduce on the
             squared vector norm so the returned value reflects the global
             hyperspectral operator rather than only the local rank.
@@ -382,7 +382,7 @@ class MeasOpHyperspectral(MeasOp):
         Returns:
             torch.Tensor: Local PSF tensor with shape ``(1, C_rank, H, W)``.
 
-        Notes:
+        Note:
             This method returns only the PSFs owned by the current rank. It
             does not gather channel blocks across distributed processes.
         """
@@ -420,7 +420,7 @@ class MeasOpHyperspectral(MeasOp):
             precond_weight (Tuple[torch.Tensor, ...]): Preconditioning tensors,
                 one per local channel.
 
-        Notes:
+        Note:
             Updating these weights invalidates cached global and per-channel
             norm estimates.
         """

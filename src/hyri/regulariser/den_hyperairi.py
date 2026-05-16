@@ -61,9 +61,9 @@ class DenHyperAIRI(Regulariser):
     estimate.
 
     Shape:
-        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+        Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
           current rank.
-        - Output: ``(1, C, H, W)`` with the same shape as input.
+        Output: ``(1, C, H, W)`` with the same shape as input.
 
     Attributes:
         _shelf (dict[float, str]): Mapping from shelf noise level to ONNX model
@@ -183,7 +183,7 @@ class DenHyperAIRI(Regulariser):
         Returns:
             torch.Tensor: Denoised and positivity-projected tensor.
 
-        Notes:
+        Note:
             The method :meth:`update` must be called with valid heuristic noise level
             and peak-intensity estimates before this method is used, so that the
             appropriate denoisers are selected and loaded for each channel.
@@ -308,7 +308,7 @@ class DenHyperAIRI(Regulariser):
             upper admissible peak ranges for local channels, or ``(None,
             None)`` when no shelf update is requested.
 
-        Notes:
+        Note:
             Shelf selection and spectral-correction updates are independent;
             either can be refreshed on its own.
         """

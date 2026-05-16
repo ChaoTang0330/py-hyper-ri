@@ -97,7 +97,7 @@ class PrimalDualPrecond(Optimiser):
             file_prefix (str, optional): Prefix prepended to saved file names.
                 Default: ``""``.
 
-        Notes:
+        Note:
             This constructor computes and stores the dirty image and PSF before
             the main optimisation loop starts, then writes them to FITS files
             on rank 0.

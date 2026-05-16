@@ -93,7 +93,7 @@ class MeasOp(ABC):
         Args:
             real_flag (bool): Real-output flag.
 
-        Notes:
+        Note:
             Updating this flag invalidates any cached operator norm.
         """
         self._real_flag = real_flag

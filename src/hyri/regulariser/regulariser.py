@@ -48,7 +48,7 @@ class Regulariser(ABC):
             dtype (torch.dtype, optional): Tensor dtype used by the
                 regulariser. Default: torch.float.
 
-        Notes:
+        Note:
             When torch.distributed is initialised, this constructor caches
             rank metadata and chooses a point-to-point communication device
             based on the active backend.

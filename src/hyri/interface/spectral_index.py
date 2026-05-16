@@ -51,7 +51,7 @@ def fit_clean_beam(psf, verbose=True) -> tuple[np.ndarray, float, float, float]:
     Raises:
         ValueError: If ``psf`` has no positive finite peak.
 
-    Notes:
+    Note:
         The Gaussian fit uses the region where ``psf > 0.5`` to seed the
         initial guess.
 
@@ -173,7 +173,7 @@ def get_spec_idx(
         np.ndarray: Spectral-index map with positive values clipped to zero and
         invalid pixels set to ``NaN``.
 
-    Notes:
+    Note:
         Pixels below ``threshold`` at any frequency are excluded from fitting.
 
     Examples:

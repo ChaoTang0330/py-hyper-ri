@@ -45,9 +45,9 @@ class ProxEllipsoid(Regulariser):
     corresponding constraint set used by the projection step.
 
     Shape:
-        - Input: List of ``C`` tensors, where ``C = len(center) = rank_num_ch``,
+        Input: List of ``C`` tensors, where ``C = len(center) = rank_num_ch``,
             and each tensor ``x[i]`` has the same shape as ``center[i]``.
-        - Output: List of ``C`` tensors with the same list length and
+        Output: List of ``C`` tensors with the same list length and
             per-channel tensor shapes as the input list.
 
     Attributes:

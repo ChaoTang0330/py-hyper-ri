@@ -134,7 +134,7 @@ class FBHyperSARA(ForwardBackward):
             verbose (bool, optional): Enable informational logging.
                 Default: True.
 
-        Notes:
+        Note:
             When ``meas_op_approx`` is provided, the approximate operator is
             used in the iterative forward step while ``meas_op`` remains the
             reference operator for dirty-image, PSF, and heuristic

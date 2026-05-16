@@ -94,7 +94,7 @@ class ForwardBackward(Optimiser):
             rank_ch_start (int, optional): Global starting channel index owned
                 by the current rank. Default: 0.
 
-        Notes:
+        Note:
             This constructor computes and stores the dirty image and PSF before
             the main optimisation loop starts, then writes them to FITS files
             on rank 0.

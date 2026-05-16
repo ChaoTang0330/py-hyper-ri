@@ -1,7 +1,8 @@
 """Implement the uSARA positivity-constrained proximal operator.
 
 This file provides a dual forward-backward proximal step combining weighted
-wavelet :math:`\\ell_1` sparsity with positivity projection.
+wavelet :math:`\\ell_1` sparsity with positivity projection. Wavelet transforms
+are evaluated with :ptwt-docs:`PyTorch Wavelet Toolbox <>`.
 """
 
 import math
@@ -21,7 +22,8 @@ class ProxSARAPos(Regulariser):
     r"""Apply the uSARA proximal operator with positivity constraint.
 
     This class implements the proximal operator of the positivity-constrained
-    weighted wavelet prior used by uSARA. For an input image cube
+    weighted wavelet prior used by uSARA. It extends
+    :class:`~hyri.regulariser.regulariser.Regulariser`. For an input image cube
     :math:`\mathbf{x}`, it computes :math:`\operatorname{prox}_{g}(\mathbf{x})`,
     where
 
@@ -42,14 +44,15 @@ class ProxSARAPos(Regulariser):
     enforces positivity.
 
     The wavelet dictionary may include several wavelet bases and an optional
-    Dirac basis. The weighted :math:`\ell_{1}` norm is evaluated channel-wise,
-    with one set of reweighting coefficients per channel and per wavelet
-    coefficient block.
+    Dirac basis. The transforms are evaluated with
+    :ptwt-docs:`PyTorch Wavelet Toolbox <>`. The weighted :math:`\ell_{1}` norm
+    is evaluated channel-wise, with one set of reweighting coefficients per
+    channel and per wavelet coefficient block.
 
     Shape:
-        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+        Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
           current rank.
-        - Output: ``(1, C, H, W)`` with the same shape as input.
+        Output: ``(1, C, H, W)`` with the same shape as input.
 
     Attributes:
         _wl_dict (list[str]): Active non-Dirac wavelet bases.
@@ -343,7 +346,7 @@ class ProxSARAPos(Regulariser):
         Returns:
             torch.Tensor: Positivity-constrained proximal output.
 
-        Notes:
+        Note:
             This method runs a dual forward-backward loop that alternates
             primal positivity projection and weighted wavelet soft thresholding.
         """
@@ -404,7 +407,7 @@ class ProxSARAPos(Regulariser):
         Args:
             x (torch.Tensor): Input tensor used to recompute SARA weights.
 
-        Notes:
+        Note:
             Reweighting is computed independently for each wavelet basis and,
             when enabled, for the Dirac component.
         """

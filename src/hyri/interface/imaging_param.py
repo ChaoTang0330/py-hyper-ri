@@ -35,7 +35,7 @@ def set_imaging_params_ri(
         KeyError: If required keys such as ``algorithm`` or ``data_file`` are
             missing from ``param_general``.
 
-    Notes:
+    Note:
         The output dictionaries expose a stable grouped contract for runtime
         initialisation:
 

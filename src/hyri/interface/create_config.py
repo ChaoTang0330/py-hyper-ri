@@ -43,7 +43,7 @@ def create_config(argv: list[str] | None = None) -> None:
         RuntimeError: If interactive input ends before the wizard is complete.
         SystemExit: If the output file already exists and overwrite is disabled.
 
-    Notes:
+    Note:
         Invalid interactive inputs should be handled by asking the same
         question again.  The wizard should not collect all answers and then
         fail with a validation error.

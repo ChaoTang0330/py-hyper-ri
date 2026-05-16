@@ -1,7 +1,7 @@
 """Define the FINUFFT-backed NUFFT measurement operator.
 
-This implementation uses ``pytorch_finufft`` to evaluate nonuniform Fourier
-transforms for forward and adjoint measurement operations.
+This implementation uses :ptfinufft:`pytorch-finufft <>` to evaluate
+nonuniform Fourier transforms for forward and adjoint measurement operations.
 """
 
 from typing import Any
@@ -18,8 +18,9 @@ class MeasOpFinufft(MeasOpNUFFT):
     """Represent a NUFFT measurement operator backed by FINUFFT.
 
     This class evaluates nonuniform Fourier sampling with
-    ``pytorch_finufft`` for single-channel measurement operators. It reuses
-    the weighting and preconditioning logic defined in :class:`MeasOpNUFFT`
+    :ptfinufft:`pytorch-finufft <>` for single-channel measurement operators.
+    It reuses the weighting and preconditioning logic defined in
+    :class:`~hyri.measurement_operator.meas_op_nufft.MeasOpNUFFT`
     while adapting the shared trajectory representation to FINUFFT's calling
     convention. The forward operator maps image-domain tensors to sampled
     visibilities, and the adjoint operator maps weighted visibilities back to

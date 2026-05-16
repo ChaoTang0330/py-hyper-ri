@@ -317,7 +317,7 @@ class Optimiser(ABC):
             ``(1, C_total, H, W)`` on ``dest``, or ``None`` on non-destination
             ranks.
 
-        Notes:
+        Note:
             Ranks with fewer channels are zero-padded temporarily so
             ``torch.distributed.gather`` can operate on tensors with matching
             shapes before the padding is removed on ``dest``.

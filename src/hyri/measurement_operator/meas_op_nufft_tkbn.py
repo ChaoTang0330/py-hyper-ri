@@ -1,7 +1,7 @@
 """Define the TKBNUFFT-backed measurement operator.
 
-This implementation uses ``torchkbnufft`` for forward and adjoint NUFFT
-operations.
+This implementation uses :torchkbnufft-docs:`torchkbnufft <>` for forward and
+adjoint NUFFT operations.
 """
 
 from typing import Any
@@ -18,10 +18,11 @@ DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 class MeasOpTkbn(MeasOpNUFFT):
     """Represent a NUFFT measurement operator backed by TorchKbNUFFT.
 
-    This class evaluates nonuniform Fourier sampling with ``torchkbnufft`` for
-    single-channel measurement operators. It reuses the weighting and
-    preconditioning logic defined in :class:`MeasOpNUFFT` while exposing the
-    backend-specific interpolation modes supported by TorchKbNUFFT.
+    This class evaluates nonuniform Fourier sampling with
+    :torchkbnufft-docs:`torchkbnufft <>` for single-channel measurement
+    operators. It reuses the weighting and preconditioning logic defined in
+    :class:`~hyri.measurement_operator.meas_op_nufft.MeasOpNUFFT` while
+    exposing the backend-specific interpolation modes supported by TorchKbNUFFT.
 
     Shape:
         Image tensor: ``(1, 1, H, W)``.

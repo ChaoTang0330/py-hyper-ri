@@ -19,9 +19,9 @@ class ProxOpPositivity(Regulariser):
     operator is :math:`\operatorname{prox}_{\iota_{\mathbb{R}_{+}}}(x)=\max(x,0)`.
 
     Shape:
-        - Input: Any tensor shape (for example ``(N, C, H, W)``).
-        - Output: Tensor with the same shape as input, with negative values
-            clipped to zero.
+        Input: Any tensor shape (for example ``(N, C, H, W)``).
+        Output: Tensor with the same shape as input, with negative values
+          clipped to zero.
 
     Example:
         >>> prox = ProxOpPositivity()

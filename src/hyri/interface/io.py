@@ -69,7 +69,7 @@ def resolve_existing_file_path(
     Raises:
         FileNotFoundError: If no candidate path resolves to an existing file.
 
-    Notes:
+    Note:
         Relative paths are resolved in this order: current working directory,
         ``relative_anchor`` when provided, then ``library_root``.
 
@@ -165,7 +165,7 @@ def load_mat_to_np(file_name: str) -> dict[str, Any]:
         FileNotFoundError: If ``file_name`` does not exist.
         OSError: If the file cannot be opened or is not a valid MAT file.
 
-    Notes:
+    Note:
         MATLAB v7.3 files are HDF5 containers and are read dataset-by-dataset.
         For structured datasets with ``real`` and ``imag`` fields, this
         function reconstructs complex arrays as ``real + 1j * imag``.
@@ -197,8 +197,8 @@ def parsing_arguments() -> argparse.Namespace:
     Raises:
         SystemExit: If command-line parsing fails or ``--help`` is requested.
 
-    Notes:
-        This function parses values from ``sys.argv`` using
+    Note:
+        This function parses values from :data:`sys.argv` using
         :class:`argparse.ArgumentParser`.
 
     Examples:
@@ -320,7 +320,7 @@ def parsing_parameters(
         NotImplementedError: If the selected algorithm is not supported by the
         parameter-routing logic.
 
-    Notes:
+    Note:
         Command-line inputs have the highest priority. Algorithm-specific
         parameters are expected not to overlap with keys from the ``main``
         section or command-line inputs.

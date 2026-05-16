@@ -106,7 +106,7 @@ def load_data_to_tensor(
         ValueError: If the provided channel partition does not match the number
             of selected physical channels.
 
-    Notes:
+    Note:
         Tensor containers ``u``, ``v``, ``w``, ``natural_weight``,
         ``imaging_weight``, ``precond_weight``, and optional ``y`` are stored
         per effective channel, with each tensor shaped as ``(1, 1, N)``.

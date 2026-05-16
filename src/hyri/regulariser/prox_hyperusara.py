@@ -2,6 +2,7 @@
 
 This file provides a dual forward-backward proximal step combining weighted
 joint-channel :math:`\\ell_{2,1}` wavelet sparsity with positivity projection.
+Wavelet transforms are evaluated with :ptwt-docs:`PyTorch Wavelet Toolbox <>`.
 """
 
 import math
@@ -21,8 +22,9 @@ class ProxHyperSARAPos(Regulariser):
     r"""Apply the Hyper-uSARA proximal operator with positivity constraint.
 
     This class implements the proximal operator of the positivity-constrained
-    weighted joint-channel wavelet prior used by Hyper-uSARA. For an input
-    image cube :math:`\mathbf{x}`, it computes
+    weighted joint-channel wavelet prior used by Hyper-uSARA. It extends
+    :class:`~hyri.regulariser.regulariser.Regulariser`. For an input image cube
+    :math:`\mathbf{x}`, it computes
 
     .. math::
         \operatorname{prox}_{g}(\mathbf{x}),
@@ -46,14 +48,15 @@ class ProxHyperSARAPos(Regulariser):
     update enforces positivity.
 
     The wavelet dictionary may include several orthogonal wavelet bases and an
-    optional Dirac basis. The :math:`\ell_{2,1}` norm is computed jointly
-    across channels, and when distributed execution is enabled, the required
-    channel norms are aggregated across ranks.
+    optional Dirac basis. The transforms are evaluated with
+    :ptwt-docs:`PyTorch Wavelet Toolbox <>`. The :math:`\ell_{2,1}` norm is
+    computed jointly across channels, and when distributed execution is enabled,
+    the required channel norms are aggregated across ranks.
 
     Shape:
-        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+        Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
           current rank.
-        - Output: ``(1, C, H, W)`` with the same shape as input.
+        Output: ``(1, C, H, W)`` with the same shape as input.
 
     Attributes:
         _wl_dict (list[str]): Active non-Dirac wavelet bases.
@@ -353,7 +356,7 @@ class ProxHyperSARAPos(Regulariser):
         Returns:
             torch.Tensor: Positivity-constrained proximal output.
 
-        Notes:
+        Note:
             This method uses a dual forward-backward loop with joint-channel
             :math:`\\ell_{2,1}` shrinkage, and synchronises channel-norm terms
             across distributed ranks when needed.
@@ -416,7 +419,7 @@ class ProxHyperSARAPos(Regulariser):
             x (torch.Tensor): Input tensor used to recompute Hyper-uSARA
                 weights.
 
-        Notes:
+        Note:
             The :math:`\\ell_2` coefficient norms are aggregated across ranks in
             distributed execution before updating the shared weights.
         """

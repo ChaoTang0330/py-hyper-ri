@@ -39,9 +39,9 @@ class DenAIRI(Regulariser):
     denoising and inverted afterwards as a lightweight self-ensembling step.
 
     Shape:
-        - Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
+        Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
           current rank.
-        - Output: ``(1, C, H, W)`` with the same shape as the input tensor.
+        Output: ``(1, C, H, W)`` with the same shape as the input tensor.
 
     Attributes:
         _shelf (dict[float, str]): Mapping from shelf noise level to ONNX model
@@ -140,7 +140,7 @@ class DenAIRI(Regulariser):
         Returns:
             torch.Tensor: Denoised tensor with the same shape as ``x``.
 
-        Notes:
+        Note:
             The method :meth:`update` must be called with valid heuristic noise level
             and peak-intensity estimates before this method is used, so that the
             appropriate denoisers are selected and loaded for each channel.
@@ -201,7 +201,7 @@ class DenAIRI(Regulariser):
             Returns ``None`` when ``ch_heuristic`` or ``ch_peak_est`` is
             ``None``.
 
-        Notes:
+        Note:
             The selected network for each channel is refreshed only when the
             admissible shelf sigma changes.
         """
