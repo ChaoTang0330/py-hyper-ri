@@ -1,4 +1,4 @@
-# pyHyperRI
+# pyHyperRI Documentation
 
 pyHyperRI is a Python package for distributed radio-interferometric imaging.
 Built on PyTorch, it can run across the diverse hardware and execution
@@ -10,9 +10,9 @@ environments supported by the PyTorch ecosystem.
 
 installation
 data
-usage
 configuration
-tutorials
+usage
+tutorials/index
 ```
 
 ```{toctree}

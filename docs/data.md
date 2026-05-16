@@ -109,7 +109,7 @@ test/data/3c353_sim_vla_meas_hs/
 This directory follows the expected layout with `msSpecs.mat` and per-channel
 data files.
 
-## Notes
+## Note
 
 The loader reads MATLAB v7.3 files with `h5py` and older MAT files with
 `scipy.io.loadmat`.

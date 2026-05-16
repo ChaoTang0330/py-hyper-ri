@@ -1,0 +1,63 @@
+/* Keep the navigation bar flush with the top of the viewport. */
+html,
+body {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+.bd-header {
+  top: 0 !important;
+  margin-top: 0 !important;
+}
+
+.pst-async-banner-revealer {
+  display: none !important;
+  height: 0 !important;
+}
+
+/* Keep API parameter lists compact after moving type hints to signatures. */
+.field-list.simple ul.simple {
+  margin-bottom: 0;
+}
+
+.field-list p {
+  margin-bottom: 0.45rem;
+}
+
+.field-list p strong {
+  margin-right: 0.35rem;
+}
+
+p.rubric,
+.hyri-autodoc-section-title {
+  border-bottom: 1px solid var(--pst-color-border);
+  color: var(--pst-color-text-base);
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.75rem;
+  padding-bottom: 0.25rem;
+}
+
+.hyri-shape-field > dt,
+.field-list.hyri-shape-field > dt,
+.field-list.simple.hyri-shape-field > dt {
+  display: none !important;
+}
+
+.hyri-shape-field > dd {
+  margin-left: 0;
+}
+
+/* Make note admonitions visually close to the PyTorch documentation style. */
+.admonition.note,
+.admonition-notes {
+  border-left: 4px solid var(--pst-color-info);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.admonition.note .admonition-title,
+.admonition-notes .admonition-title {
+  font-weight: 600;
+}

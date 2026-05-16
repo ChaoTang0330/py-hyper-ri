@@ -57,6 +57,8 @@ fields when provided.
 
 ## Main Settings
 
+The parameters in the `main` section can be overridden by the corresponding command-line options.
+
 `src_name`:
 : Experiment or target source name tag used in the output file names. If empty,
   pyHyperRI uses the input data directory name.
@@ -435,7 +437,7 @@ This example shows the `main` section only. A complete configuration file also
 contains the common sections and the algorithm-specific sections described
 above.
 
-## Validation Notes
+## Validation Note
 
 Empty lists, written as `[]`, are used in the default template for optional
 values that should be inferred at runtime.
