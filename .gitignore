@@ -1,27 +1,55 @@
-# Mac
+# OS files
+.DS_Store
 **/.DS_Store
-
-# Windows
 Thumbs.db
 
-# WebStorm
+# Editors and local workspace files
 .idea/
-
-# vi
+.vscode/
 *~
+.codex
+.codex/
 
-# General
+# Logs and scheduler output
 logs/
 *.log
 *.err
 *.out
 
-# Python
+# Python bytecode and caches
+__pycache__/
 **/__pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python environments and packaging
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Sphinx documentation builds
+docs/_build/
+docs/api/generated/*
+
+# Jupyter
+.ipynb_checkpoints/
 *.ipynb
 
-# Data
+# Data and model artifacts
 *.mat
 *.fits
 *.zip
@@ -33,19 +61,19 @@ logs/
 *.csv
 *.json
 
-# WSCLEAN
+# Measurement sets
 *.MS
 
-# MATLAB
+# MATLAB and certificates
 *.asv
 *.prf
 *.p12
 *.pem
 
-# PyTorch
+# PyTorch generated files
 .torchinductor_cache/
 
-# Exception
+# Tracked data/configuration exceptions
 !airi_denoisers/shelf*.csv
 !airi_denoisers/*shelf/*.onnx
 !data/3c353_gdth.fits
