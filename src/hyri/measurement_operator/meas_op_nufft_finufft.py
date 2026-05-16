@@ -1,7 +1,7 @@
 """Define the FINUFFT-backed NUFFT measurement operator.
 
-This implementation uses :ptfinufft:`pytorch-finufft <>` to evaluate
-nonuniform Fourier transforms for forward and adjoint measurement operations.
+This implementation uses :mod:`pytorch_finufft` to evaluate nonuniform Fourier
+transforms for forward and adjoint measurement operations.
 """
 
 from typing import Any
@@ -17,9 +17,9 @@ DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 class MeasOpFinufft(MeasOpNUFFT):
     """Represent a NUFFT measurement operator backed by FINUFFT.
 
-    This class evaluates nonuniform Fourier sampling with
-    :ptfinufft:`pytorch-finufft <>` for single-channel measurement operators.
-    It reuses the weighting and preconditioning logic defined in
+    This class evaluates nonuniform Fourier sampling with :mod:`pytorch_finufft`
+    for single-channel measurement operators. It reuses the weighting and
+    preconditioning logic defined in
     :class:`~hyri.measurement_operator.meas_op_nufft.MeasOpNUFFT`
     while adapting the shared trajectory representation to FINUFFT's calling
     convention. The forward operator maps image-domain tensors to sampled
@@ -54,6 +54,18 @@ class MeasOpFinufft(MeasOpNUFFT):
         >>> vis = op.forward_op(image)
         >>> vis.shape
         torch.Size([1, 1, 8])
+
+    References:
+        Shih, Y.-H., Wright, G., Andén, J., Blaschke, J., & Barnett, A. H.
+        (2021). `cuFINUFFT: a load-balanced GPU library for general-purpose
+        nonuniform FFTs <https://doi.org/10.1109/IPDPSW52791.2021.00105>`_.
+        *Proc. IEEE Int. Parallel Distrib. Process. Symp. Workshops*,
+        688-697.
+
+        Barnett, A. H., Magland, J. F., & af Klinteberg, L. (2019). `A parallel
+        non-uniform fast Fourier transform library based on an "exponential of
+        semicircle" kernel <https://doi.org/10.1137/18M120885X>`_.
+        *SIAM J. Sci. Comput.*, 41(5), C479-C504.
     """
 
     def __init__(

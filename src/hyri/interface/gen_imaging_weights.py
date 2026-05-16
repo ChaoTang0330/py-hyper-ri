@@ -22,8 +22,8 @@ def gen_imaging_weights(
     """Generate imaging weights from UV sampling density using PyTorch.
 
     Args:
-        u (torch.Tensor): U-coordinates in Fourier radians.
-        v (torch.Tensor): V-coordinates in Fourier radians.
+        u (torch.Tensor): :math:`u`-coordinates in Fourier radians.
+        v (torch.Tensor): :math:`v`-coordinates in Fourier radians.
         natural_weight (torch.Tensor): Natural weights (square root of inverse
             variance), either scalar-like or per-visibility.
         im_size (Tuple[int, int]): Image size used to construct the UV grid.
@@ -134,8 +134,8 @@ def gen_imaging_weights_np(
     """Generate imaging weights from UV sampling density using NumPy.
 
     Args:
-        u (np.ndarray): U-coordinates of the sampling pattern.
-        v (np.ndarray): V-coordinates of the sampling pattern.
+        u (np.ndarray): :math:`u`-coordinates of the sampling pattern.
+        v (np.ndarray): :math:`v`-coordinates of the sampling pattern.
         natural_weight (np.ndarray, optional): Natural weights for robust
             weighting. Required for ``"robust"``/``"briggs"`` modes.
             Default: None.

@@ -14,6 +14,10 @@ document.addEventListener("DOMContentLoaded", () => {
     return fieldList?.querySelector(":scope > dt")?.textContent?.replace(/:$/, "").trim();
   };
 
+  const isNote = (element) => {
+    return element?.matches("div.admonition.note, div.admonition-notes");
+  };
+
   document.querySelectorAll("dl.py.class > dd").forEach((classBody) => {
     const directChildren = Array.from(classBody.children);
     const shapeField = directChildren.find((child) => {
@@ -33,6 +37,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const initSummary = initField.previousElementSibling?.tagName === "P"
         ? initField.previousElementSibling
         : null;
+      const initNotes = [];
+      let nextInitElement = initField.nextElementSibling;
+      while (isNote(nextInitElement)) {
+        initNotes.push(nextInitElement);
+        nextInitElement = nextInitElement.nextElementSibling;
+      }
       const initTitle = document.createElement("p");
       initTitle.className = "rubric hyri-autodoc-section-title";
       initTitle.textContent = "Initialisation";
@@ -45,6 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
         initFragment.appendChild(initSummary);
       }
       initFragment.appendChild(initField);
+      initNotes.forEach((note) => initFragment.appendChild(note));
       classBody.insertBefore(initFragment, sectionStart);
     }
 

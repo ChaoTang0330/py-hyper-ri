@@ -18,6 +18,7 @@
    .. rubric:: {{ _('Functions') }}
 
    .. autosummary::
+      :nosignatures:
    {% for item in functions %}
       {{ item }}
    {%- endfor %}

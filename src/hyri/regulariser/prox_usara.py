@@ -2,7 +2,7 @@
 
 This file provides a dual forward-backward proximal step combining weighted
 wavelet :math:`\\ell_1` sparsity with positivity projection. Wavelet transforms
-are evaluated with :ptwt-docs:`PyTorch Wavelet Toolbox <>`.
+are evaluated with :mod:`ptwt`.
 """
 
 import math
@@ -44,10 +44,9 @@ class ProxSARAPos(Regulariser):
     enforces positivity.
 
     The wavelet dictionary may include several wavelet bases and an optional
-    Dirac basis. The transforms are evaluated with
-    :ptwt-docs:`PyTorch Wavelet Toolbox <>`. The weighted :math:`\ell_{1}` norm
-    is evaluated channel-wise, with one set of reweighting coefficients per
-    channel and per wavelet coefficient block.
+    Dirac basis. The transforms are evaluated with :mod:`ptwt`. The weighted
+    :math:`\ell_{1}`-norm is evaluated channel-wise, with one set of
+    reweighting coefficients per channel and per wavelet coefficient block.
 
     Shape:
         Input: ``(1, C, H, W)`` where ``C`` equals ``rank_num_ch`` for the
@@ -84,6 +83,10 @@ class ProxSARAPos(Regulariser):
         In H. H. Bauschke, R. S. Burachik, P. L. Combettes, V. Elser,
         D. R. Luke, & H. Wolkowicz (Eds.), *Fixed-point algorithms for inverse
         problems in science and engineering* (pp. 185-212). Springer.
+
+        Wolter, M., Blanke, F., Garcke, J., & Hoyt, C. T. (2024). `ptwt - The
+        PyTorch Wavelet Toolbox <http://jmlr.org/papers/v25/23-0636.html>`_.
+        *J. Mach. Learn. Res.*, 25(80), 1-7.
     """
 
     def __init__(

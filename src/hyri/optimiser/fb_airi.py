@@ -69,6 +69,11 @@ class FBAIRI(ForwardBackward):
         reconstruction algorithms in radio interferometry: From handcrafted to
         learned regularization denoisers <https://doi.org/10.1093/mnras/stac2672>`_.
         *MNRAS*, 518(1), 604-622.
+
+        Terris, M., Tang, C., Jackson, A., & Wiaux, Y. (2025). `The AIRI
+        plug-and-play algorithm for image reconstruction in radio-
+        interferometry: variations and robustness
+        <https://doi.org/10.1093/mnras/staf022>`_. *MNRAS*, 537(2), 1608-1619.
     """
 
     def __init__(

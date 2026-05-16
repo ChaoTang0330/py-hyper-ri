@@ -1,7 +1,7 @@
 """Define the TKBNUFFT-backed measurement operator.
 
-This implementation uses :torchkbnufft-docs:`torchkbnufft <>` for forward and
-adjoint NUFFT operations.
+This implementation uses :mod:`torchkbnufft` for forward and adjoint NUFFT
+operations.
 """
 
 from typing import Any
@@ -18,9 +18,9 @@ DEFAULT_WEIGHT = torch.ones(1, 1, 1)
 class MeasOpTkbn(MeasOpNUFFT):
     """Represent a NUFFT measurement operator backed by TorchKbNUFFT.
 
-    This class evaluates nonuniform Fourier sampling with
-    :torchkbnufft-docs:`torchkbnufft <>` for single-channel measurement
-    operators. It reuses the weighting and preconditioning logic defined in
+    This class evaluates nonuniform Fourier sampling with :mod:`torchkbnufft`
+    for single-channel measurement operators. It reuses the weighting and
+    preconditioning logic defined in
     :class:`~hyri.measurement_operator.meas_op_nufft.MeasOpNUFFT` while
     exposing the backend-specific interpolation modes supported by TorchKbNUFFT.
 
@@ -55,6 +55,12 @@ class MeasOpTkbn(MeasOpNUFFT):
         >>> vis = op.forward_op(image)
         >>> vis.shape
         torch.Size([1, 1, 8])
+
+    References:
+        Muckley, M. J., Stern, R., Murrell, T., & Knoll, F. (2020).
+        *TorchKbNufft: A high-level, hardware-agnostic non-uniform fast Fourier
+        transform*. ISMRM Workshop Data Sampling Image Reconstr.
+        Source code available at https://github.com/mmuckley/torchkbnufft.
     """
 
     def __init__(

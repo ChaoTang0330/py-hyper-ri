@@ -25,7 +25,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinx_design",
     "myst_parser",
@@ -115,10 +114,10 @@ intersphinx_mapping = {
     "torchkbnufft": ("https://torchkbnufft.readthedocs.io/en/stable/", {}),
 }
 
-extlinks = {
-    "ptfinufft": ("https://flatironinstitute.github.io/pytorch-finufft/%s", "%s"),
-    "ptwt-docs": ("https://pytorch-wavelet-toolbox.readthedocs.io/en/stable/%s", "%s"),
-    "torchkbnufft-docs": ("https://torchkbnufft.readthedocs.io/en/stable/%s", "%s"),
+external_module_links = {
+    "ptwt": "https://pytorch-wavelet-toolbox.readthedocs.io/en/stable/",
+    "pytorch_finufft": "https://flatironinstitute.github.io/pytorch-finufft/",
+    "torchkbnufft": "https://torchkbnufft.readthedocs.io/en/stable/",
 }
 
 
@@ -133,5 +132,19 @@ def _rename_notes_to_note(app, doctree, docname):
             admonition[0] += nodes.Text("Note")
 
 
+def _resolve_external_modules(app, env, node, contnode):
+    if node.get("refdomain") != "py" or node.get("reftype") != "mod":
+        return None
+
+    url = external_module_links.get(node.get("reftarget"))
+    if url is None:
+        return None
+
+    ref = nodes.reference("", "", internal=False, refuri=url)
+    ref += contnode
+    return ref
+
+
 def setup(app):
     app.connect("doctree-resolved", _rename_notes_to_note)
+    app.connect("missing-reference", _resolve_external_modules)

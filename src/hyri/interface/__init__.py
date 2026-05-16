@@ -7,7 +7,7 @@ channel-gather operations.
 """
 
 from .dist_util import gather_ch_to_tensor
-from .gen_imaging_weights import gen_imaging_weights
+from .gen_imaging_weights import gen_imaging_weights, gen_imaging_weights_np
 from .imaging_param import set_imaging_params_ri
 from .io import (
     env_int,
@@ -24,6 +24,7 @@ __all__ = [
     "env_int",
     "fit_clean_beam",
     "gen_imaging_weights",
+    "gen_imaging_weights_np",
     "get_spec_idx",
     "gather_ch_to_tensor",
     "load_data_to_tensor",
