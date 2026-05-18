@@ -85,7 +85,7 @@ pygments_style = "sphinx"
 
 html_theme_options = {
     "pytorch_project": "docs",
-    "logo": {"text": "pyHyperAIRI"},
+    "logo": {"text": "pyHyperRI"},
     "collapse_navigation": False,
     "display_version": True,
     "show_prev_next": True,

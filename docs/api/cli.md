@@ -1,4 +1,4 @@
-# Command Line
+# Command-Line Entry Points
 
 ```{eval-rst}
 .. automodule:: hyri.cli
