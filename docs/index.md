@@ -17,8 +17,8 @@ supported by the PyTorch ecosystem.
 :maxdepth: 1
 :caption: User Guide
 
-installation
 background
+installation
 data
 configuration
 usage
