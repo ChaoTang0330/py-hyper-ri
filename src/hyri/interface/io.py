@@ -8,6 +8,7 @@ either legacy formats or HDF5-based v7.3 format.
 import argparse
 import json
 import os
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -202,20 +203,34 @@ def parsing_arguments() -> argparse.Namespace:
         :class:`argparse.ArgumentParser`.
 
     Examples:
-        Run with a custom config file::
+        Parse arguments from ``sys.argv``:
 
-            python run_imager.py --config ./config/example.json
-
-        Override algorithm and image size from the command line::
-
-            python run_imager.py --algorithm hyperairi --im_dim_x 512 --im_dim_y 512
+        >>> import sys
+        >>> sys.argv = [
+        ...     "hyri-imaging",
+        ...     "--data_file",
+        ...     "./data/example_meas",
+        ...     "--algorithm",
+        ...     "hyperairi",
+        ...     "--ch_start",
+        ...     "1",
+        ...     "--ch_last",
+        ...     "36",
+        ... ]
+        >>> args = parsing_arguments()
+        >>> args.config is None
+        True
+        >>> args.algorithm
+        'hyperairi'
+        >>> args.ch_last
+        36
     """
     parser = argparse.ArgumentParser(description="Imaging main parameters.")
     parser.add_argument(
         "-c",
         "--config",
         type=str,
-        default="./config/default.json",
+        default=None,
         help="Path to the configuration file.",
     )
     parser.add_argument(
@@ -299,7 +314,7 @@ def parsing_arguments() -> argparse.Namespace:
 
 
 def parsing_parameters(
-    config_file: str, input_param: argparse.Namespace | None = None
+    config_file: str | None, input_param: argparse.Namespace | None = None
 ) -> dict[str, Any]:
     """Merge configuration-file parameters with CLI overrides.
 
@@ -308,7 +323,9 @@ def parsing_parameters(
     and shared parameter groups.
 
     Args:
-        config_file (str): Path to the JSON configuration file.
+        config_file (str, optional): Path to the JSON configuration file. If
+            ``None`` or empty, the default configuration bundled with the
+            package is used.
         input_param (argparse.Namespace, optional): Parsed CLI arguments used
             as overrides when values are not ``None``. Default: ``None``.
 
@@ -325,7 +342,20 @@ def parsing_parameters(
         parameters are expected not to overlap with keys from the ``main``
         section or command-line inputs.
     """
-    with open(config_file, encoding="utf-8") as file:
+    # Use the packaged default only when no config path was supplied.
+    use_default = config_file in (None, "")
+    if use_default:
+        config_file = (
+            resources.files("hyri").joinpath("config").joinpath("default.json")
+        )
+    else:
+        config_file = Path(config_file)
+
+    if not config_file.is_file():
+        raise FileNotFoundError(f"Configuration file not found: {config_file}")
+
+    # Load the JSON configuration file.
+    with config_file.open("r", encoding="utf-8") as file:
         json_data = json.load(file)
 
     json_dict = {}
@@ -368,5 +398,9 @@ def parsing_parameters(
         for k, v in dict_input_param.items():
             if k in param and v is not None:
                 param[k] = v
+
+    # Log if the default config file is used.
+    if param.get("verbose", True) and use_default:
+        print("INFO: The default configuration file is used.", flush=True)
 
     return param
