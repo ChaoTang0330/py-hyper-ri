@@ -142,6 +142,21 @@ def test_parsing_parameters_merges_main_general_and_algo_sections(
     assert "denoiser_comment_1" not in param
 
 
+def test_parsing_parameters_uses_packaged_default_when_config_is_missing() -> None:
+    """A missing config argument should load the bundled default template."""
+    param = parsing_parameters(None)
+
+    assert param["algorithm"] == "usara"
+    assert param["nufft_package"] == "finufft"
+    assert param["heu_reg_param_scale"] == 1.0
+
+
+def test_parsing_parameters_rejects_explicit_missing_config() -> None:
+    """An explicit missing config path should fail instead of silently defaulting."""
+    with pytest.raises(FileNotFoundError, match="Configuration file not found"):
+        parsing_parameters("does-not-exist.json")
+
+
 def test_parsing_parameters_applies_cli_overrides(tmp_path: Path) -> None:
     """
     CLI args should override matching main fields and dnn_shelf_path when provided.

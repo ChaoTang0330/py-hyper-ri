@@ -15,7 +15,7 @@ def test_parsing_arguments_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     args = parsing_arguments()
 
-    assert args.config == "./config/default.json"
+    assert args.config is None
     assert args.src_name is None
     assert args.data_file is None
     assert args.result_path is None
