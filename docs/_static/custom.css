@@ -82,13 +82,52 @@ p.rubric,
   margin-top: 1rem;
 }
 
-.github-source-link a {
+.notebook-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hyri-sidebar-link {
+  align-items: center;
   color: var(--pst-color-text-muted);
+  display: flex;
+  gap: 0.35rem;
+  white-space: nowrap;
   text-decoration: none;
 }
 
-.github-source-link a:hover {
-  color: var(--pst-color-link-hover);
+.hyri-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+}
+
+.hyri-jupyter-logo {
+  background-color: currentColor;
+  flex: 0 0 auto;
+  height: 1rem;
+  mask-image: url("jupyter-icon.svg");
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  transform: scale(1.3);
+  transform-origin: center;
+  width: 1rem;
+  -webkit-mask-image: url("jupyter-icon.svg");
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.hyri-sidebar-icon .fa-github {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.hyri-sidebar-link:hover {
+  color: var(--pst-color-link-hover) !important;
   text-decoration: underline;
 }
 

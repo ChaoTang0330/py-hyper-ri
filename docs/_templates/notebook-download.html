@@ -1,0 +1,25 @@
+{% if notebook_source %}
+<div class="tocsection notebook-actions">
+  <a
+    class="hyri-sidebar-link"
+    href="{{ pathto('_sources/' + notebook_source, 1) }}"
+    download
+  >
+    <span class="hyri-sidebar-icon hyri-jupyter-logo" aria-hidden="true"></span>
+    <span>Download Notebook</span>
+  </a>
+  {% if github_source_url %}
+  <a
+    class="hyri-sidebar-link"
+    href="{{ github_source_url }}"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <span class="hyri-sidebar-icon">
+      <i class="fa-brands fa-github"></i>
+    </span>
+    <span>View on GitHub</span>
+  </a>
+  {% endif %}
+</div>
+{% endif %}

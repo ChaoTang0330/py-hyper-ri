@@ -6,10 +6,7 @@ workflows.
 ```{toctree}
 :maxdepth: 1
 
+usara_mono_gpu
+airi_mono_gpu
 distributed
 ```
-
-TODO:
-
-- Add notebook tutorials for the supported imaging algorithms.
-- Link each tutorial to the required example data and configuration file.

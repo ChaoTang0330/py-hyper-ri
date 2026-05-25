@@ -26,10 +26,10 @@ installation
 data
 usage
 configuration
-tutorials/index
 ```
 ```{toctree}
 :maxdepth: 2
 
+tutorials/index
 api/index
 ```

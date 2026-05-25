@@ -27,13 +27,14 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_design",
-    "myst_parser",
+    "myst_nb",
 ]
 
 root_doc = "index"
 source_suffix = {
     ".rst": "restructuredtext",
-    ".md": "markdown",
+    ".md": "myst-nb",
+    ".ipynb": "myst-nb",
 }
 templates_path = ["_templates"]
 
@@ -68,6 +69,8 @@ myst_enable_extensions = [
     "dollarmath",
     "amsmath",
 ]
+
+nb_execution_mode = "off"
 
 exclude_patterns = [
     "_build",
@@ -108,7 +111,11 @@ html_theme_options = {
             "icon": "fa-brands fa-python",
         },
     ],
-    "secondary_sidebar_items": ["page-toc", "github-source.html"],
+    "secondary_sidebar_items": [
+        "page-toc",
+        "notebook-download.html",
+        "github-source.html",
+    ],
     "show_lf_footer": False,
     "show_pytorch_org_link": False,
     "use_edit_page_button": False,
@@ -173,7 +180,15 @@ def _github_path_for_page(pagename, context):
 
 
 def _add_github_source_url(app, pagename, templatename, context, doctree):
+    notebook_source = f"{pagename}.ipynb"
+    notebook_path = ROOT / "docs" / notebook_source
+    context["notebook_source"] = (
+        notebook_source if notebook_path.exists() else None
+    )
+
     github_path = _github_path_for_page(pagename, context)
+    if github_path is None and context["notebook_source"] is not None:
+        github_path = f"docs/{context['notebook_source']}"
     context["github_source_url"] = (
         f"{github_source_base}{github_path}" if github_path is not None else None
     )
