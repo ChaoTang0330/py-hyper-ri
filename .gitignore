@@ -82,5 +82,6 @@ docs/api/generated/*
 !src/hyri/config/*.json
 !docs/_images/background/*.png
 !requirements.txt
+!docs/tutorials/*.ipynb
 !tutorial_airi_python.ipynb
 !tutorial_usara_python.ipynb
