@@ -5,6 +5,10 @@
 .prev-next-footer {
   display: none !important;
 }
+
+.toctree-wrapper.compound + .toctree-wrapper.compound {
+  margin-top: -1rem;
+}
 </style>
 ```
 
@@ -20,14 +24,12 @@ supported by the PyTorch ecosystem.
 background
 installation
 data
-configuration
 usage
+configuration
 tutorials/index
 ```
-
 ```{toctree}
 :maxdepth: 2
-:caption: API Reference
 
 api/index
 ```

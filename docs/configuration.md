@@ -11,6 +11,8 @@ measurement operator, algorithm, and algorithm-specific parameters.
 pyHyperRI also provides the `hyri-config` wizard to help create a configuration
 file from the packaged template.
 
+The generated configuration file can then be passed to `hyri-imaging` with the `--config` option followed by the file path.
+
 ## Create a Configuration File
 
 Create a default configuration file without prompts:
