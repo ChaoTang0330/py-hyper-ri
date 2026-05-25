@@ -103,7 +103,7 @@ commands.
 Example hyperspectral measurement files are available under:
 
 ```text
-test/data/3c353_sim_vla_meas_hs/
+data/3c353_sim_vla_meas_hs/
 ```
 
 This directory follows the expected layout with `msSpecs.mat` and per-channel

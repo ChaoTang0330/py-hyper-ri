@@ -20,9 +20,17 @@ dependencies = [
     "scikit-image>=0.26.0",
     "torchkbnufft>=1.5.2",
     "pytorch-finufft>=0.1.0",
+    "python-casacore",
 ]
 
 [project.optional-dependencies]
+cuda = [
+    "cufinufft>=2.2.0",
+]
+notebook = [
+    "ipykernel",
+    "jupyterlab",
+]
 dev = [
     "pytest>=7.0",
     "black",
@@ -38,16 +46,6 @@ docs = [
     "sphinx-design==0.6.1",
     "myst-parser==4.0.1",
     "myst-nb==1.3.0",
-]
-notebook = [
-    "ipykernel",
-    "jupyterlab",
-]
-cuda = [
-    "cufinufft>=2.2.0",
-]
-ms = [
-    "python-casacore",
 ]
 
 [tool.setuptools.package-data]

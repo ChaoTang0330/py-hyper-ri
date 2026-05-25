@@ -10,7 +10,7 @@ from hyri.interface.load_data import load_data_to_tensor
 from hyri.measurement_operator import MeasOpHyperspectral
 
 TEST_MEAS_PATH = os.path.join(
-    os.path.dirname(__file__), "data", "3c353_sim_vla_meas_hs"
+    os.path.dirname(__file__), "..", "data", "3c353_sim_vla_meas_hs"
 )
 
 
