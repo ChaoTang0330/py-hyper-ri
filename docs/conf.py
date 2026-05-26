@@ -1,7 +1,5 @@
 """Sphinx configuration for the pyHyperRI documentation."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -25,6 +23,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinx_design",
     "myst_nb",
@@ -145,9 +144,14 @@ external_module_links = {
     "torchkbnufft": "https://torchkbnufft.readthedocs.io/en/stable/",
 }
 
-github_source_base = (
-    "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/blob/main/"
-)
+github_repo_url = "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
+github_source_base = f"{github_repo_url}/blob/main/"
+github_tree_base = f"{github_repo_url}/tree/main/"
+
+extlinks = {
+    "repo-file": (f"{github_source_base}%s", "%s"),
+    "repo-tree": (f"{github_tree_base}%s", "%s"),
+}
 
 
 def _github_path_for_page(pagename, context):

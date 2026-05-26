@@ -1,0 +1,33 @@
+{# Display the default section navigation with a section-specific heading. #}
+{% set section_title = none %}
+{% set section_doc = none %}
+{% if pagename == "tutorials/index" or pagename.startswith("tutorials/") %}
+  {% set section_title = "Tutorials" %}
+  {% set section_doc = "tutorials/index" %}
+{% elif pagename == "api/index" or pagename.startswith("api/") %}
+  {% set section_title = "API Reference" %}
+  {% set section_doc = "api/index" %}
+{% endif %}
+
+<nav class="bd-docs-nav bd-links" aria-label="{{ _('Section Navigation') }}">
+  <p class="bd-links__title" role="heading" aria-level="1">
+    {% if section_title %}
+    <a class="reference internal" href="{{ pathto(section_doc) }}">
+      {{ section_title }}
+    </a>
+    {% else %}
+    {{ _("Section Navigation") }}
+    {% endif %}
+  </p>
+  <div class="bd-toc-item navbar-nav">
+    {{- generate_toctree_html(
+      "sidebar",
+      show_nav_level=theme_show_nav_level | int,
+      maxdepth=theme_navigation_depth | int,
+      collapse=theme_collapse_navigation | tobool,
+      includehidden=theme_sidebar_includehidden | tobool,
+      titles_only=True
+      )
+    -}}
+  </div>
+</nav>

@@ -18,4 +18,5 @@
    hyri.interface.gen_imaging_weights
    hyri.interface.dist_util
    hyri.interface.spectral_index
+   hyri.interface.sim_hs_img_cube
 ```
