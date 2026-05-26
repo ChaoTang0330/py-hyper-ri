@@ -193,18 +193,19 @@ def gen_curvature_map(gauss_field, curv_scale):
     return curv
 
 
-def sim_hs_img_cube(
+def gen_img_cube(
     img: np.ndarray,
     freqs: np.ndarray,
     sig_blur: float = 10,
     sig_gauss_field: float = 10,
     curv_scale: float = 0.5,
 ):
-    """Simulate a hyperspectral image cube from a reference image.
+    r"""Simulate a hyperspectral image cube from a reference image.
 
     The cube follows a spatially varying power-law model with curvature,
 
     .. math::
+
         I_\nu = I_{\nu_0}
             \left(\frac{\nu}{\nu_0}\right)^{
                 \alpha + \beta \log(\nu / \nu_0)

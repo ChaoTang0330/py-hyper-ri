@@ -18,12 +18,13 @@ from .io import (
     verbose_print,
 )
 from .load_data import load_data_to_tensor
-from .sim_hs_img_cube import sim_hs_img_cube
+from .sim_hs_img_cube import gen_img_cube
 from .spectral_index import fit_clean_beam, get_spec_idx
 
 __all__ = [
     "env_int",
     "fit_clean_beam",
+    "gen_img_cube",
     "gen_imaging_weights",
     "gen_imaging_weights_np",
     "get_spec_idx",
@@ -33,7 +34,6 @@ __all__ = [
     "parsing_arguments",
     "parsing_parameters",
     "print_dict",
-    "sim_hs_img_cube",
     "set_imaging_params_ri",
     "verbose_print",
 ]
