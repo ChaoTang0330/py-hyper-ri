@@ -18,6 +18,7 @@ from .io import (
     verbose_print,
 )
 from .load_data import load_data_to_tensor
+from .sim_hs_img_cube import sim_hs_img_cube
 from .spectral_index import fit_clean_beam, get_spec_idx
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "parsing_arguments",
     "parsing_parameters",
     "print_dict",
+    "sim_hs_img_cube",
     "set_imaging_params_ri",
     "verbose_print",
 ]
