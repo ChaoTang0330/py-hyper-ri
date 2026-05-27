@@ -94,7 +94,9 @@ p.rubric,
 .bd-sidebar-primary .bd-links__title a:hover,
 .bd-sidebar-primary .bd-links__title a:focus {
   color: inherit;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: max(3px, 0.1875rem, 0.12em);
+  text-underline-offset: 0.1578em;
 }
 
 .github-source-link {

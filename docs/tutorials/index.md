@@ -8,5 +8,6 @@ workflows.
 
 usara_mono_gpu
 airi_mono_gpu
+hs_meas_simulation
 distributed
 ```
