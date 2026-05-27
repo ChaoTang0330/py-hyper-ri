@@ -263,17 +263,26 @@ def load_data_to_tensor(
         # Load channel-specific file data_ch_<index>.mat.
         data_ch_file = glob.glob(
             os.path.join(uv_file_path, f"*data_ch_{ch+rank_ch_start+1}.mat")
-        )[0]
+        )
         data_ch = {}
-        if os.path.exists(data_ch_file):
-            data_ch = load_mat_to_np(data_ch_file)
+        if data_ch_file and os.path.exists(data_ch_file[0]):
+            data_ch = load_mat_to_np(data_ch_file[0])
 
-        if uvw_flag:
+        if (
+            uvw_flag is not None
+            and uvw_flag[ch] is not None
+            and uvw_flag[ch].size == u.size
+        ):
             flag = uvw_flag[ch].flatten()
             verbose_print(
                 "INFO: uvw flag provided as user input.", verbose_general and ch == 0
             )
-        elif data_ch and "flag" in data_ch:
+        elif (
+            data_ch
+            and "flag" in data_ch
+            and data_ch["flag"] is not None
+            and data_ch["flag"].size == u.size
+        ):
             flag = data_ch["flag"].flatten()
             verbose_print(
                 "INFO: uvw flag found in the data file.", verbose_general and ch == 0
@@ -286,12 +295,13 @@ def load_data_to_tensor(
             )
         if invert_uvw_flag:
             flag = np.logical_not(flag)
+        unflagged = np.logical_not(flag)
 
         # Convert valid UVW samples into wavelength units.
         wavelength = speed_of_light / freq
-        u = u[np.logical_not(flag)] / wavelength
-        v = v[np.logical_not(flag)] / wavelength
-        w = w[np.logical_not(flag)] / wavelength
+        u = u[unflagged] / wavelength
+        v = v[unflagged] / wavelength
+        w = w[unflagged] / wavelength
 
         # Track maximum projected baseline in wavelength units.
         max_proj_baseline = max(max_proj_baseline, np.max(np.sqrt(u**2 + v**2)))
@@ -302,11 +312,21 @@ def load_data_to_tensor(
         w_physical.append(w)
 
         # Load per-channel visibilities and weights when available.
-        if data_ch and "data_I" in data_ch:
+        if (
+            data_ch
+            and "data_I" in data_ch
+            and data_ch["data_I"] is not None
+            and data_ch["data_I"].size > 0
+        ):
             y_physical.append(data_ch["data_I"].flatten())
 
-        if data_ch and "weightsNat" in data_ch and data_ch["weightsNat"]:
-            natural_weight_physical.append(data_ch["weightsNat"])
+        if (
+            data_ch
+            and "weightsNat" in data_ch
+            and data_ch["weightsNat"] is not None
+            and data_ch["weightsNat"].size > 0
+        ):
+            natural_weight_physical.append(data_ch["weightsNat"].flatten())
             if natural_weight_physical[-1].size == 1:
                 natural_weight_physical[-1] = natural_weight_physical[
                     -1
@@ -315,8 +335,13 @@ def load_data_to_tensor(
             natural_weight_physical.append(np.ones_like(u_physical[-1]))
 
         if load_weight:
-            if data_ch and "weightsImg" in data_ch and data_ch["weightsImg"]:
-                imaging_weight_physical.append(data_ch["weightsImg"])
+            if (
+                data_ch
+                and "weightsImg" in data_ch
+                and data_ch["weightsImg"] is not None
+                and data_ch["weightsImg"].size > 0
+            ):
+                imaging_weight_physical.append(data_ch["weightsImg"].flatten())
             else:
                 imaging_weight_physical = []
                 load_weight = False
