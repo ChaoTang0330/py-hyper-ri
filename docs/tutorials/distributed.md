@@ -111,15 +111,16 @@ such as SLURM, it is also common to restrict each process with
 `CUDA_VISIBLE_DEVICES`.
 
 The backend also determines which tensor devices can be used for distributed
-collectives. pyHyperRI follows the active backend when it creates tensors for
-distributed coordination:
+collectives. pyHyperRI currently places its internal distributed coordination
+tensors on CUDA for `nccl`, XPU for `xccl`, and CPU for other backends:
 
 `nccl`:
 : Uses CUDA tensors.
 
 `gloo`:
-: Uses CPU tensors in pyHyperRI. This backend is useful for CPU runs and
-  debugging.
+: PyTorch supports CPU collectives and can support GPU collectives with Gloo,
+  but NCCL is recommended for CUDA GPU runs. pyHyperRI documents Gloo mainly as
+  a CPU and debugging fallback.
 
 `mpi`:
 : Depends on the MPI-enabled PyTorch build. PyTorch must be built from source
@@ -343,6 +344,119 @@ working directory. If `config/tutorial_hs.json` is not packaged into the image,
 mount the config directory as well. Depending on the cluster DNS setup, you may
 need to use the fully qualified name
 `pyhyperri-0.pyhyperri.<namespace>.svc.cluster.local` for `MASTER_ADDR`.
+
+## Visualise the results
+
+After imaging finishes, pyHyperRI writes final products under the effective
+output directory:
+
+```text
+<result_path>/<src_name>/
+```
+
+For the commands in this tutorial, the default `src_name` is the measurement
+folder name, so the expected output directory is:
+
+```text
+results/tutorial_hs/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40
+```
+
+Use the notebook-style code below to plot the first and last channel of the
+reconstruction, dirty image, and residual dirty image, plus the spectral-index
+map. The code also saves the figures used by this documentation page.
+
+```python
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from astropy.io import fits
+
+
+result_dir = Path(
+    "results/tutorial_hs/"
+    "3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40"
+)
+figure_dir = Path("docs/_images/tutorials")
+figure_dir.mkdir(parents=True, exist_ok=True)
+
+
+def read_cube(path):
+    cube = np.squeeze(np.asarray(fits.getdata(path), dtype=float))
+    return cube[None, :, :] if cube.ndim == 2 else cube
+
+
+def log_display(image, vmin=0.0, vmax=1.0):
+    image = np.nan_to_num(image, nan=0.0, posinf=vmax, neginf=vmin)
+    image = np.clip(image, vmin, vmax)
+    image = (image - vmin) / (vmax - vmin)
+    return np.log10(1.0 + 9.0 * image)
+
+
+dirty = read_cube(result_dir / "dirty.fits")
+model = read_cube(next(result_dir.glob("*model_image.fits")))
+residual = read_cube(next(result_dir.glob("*residual_dirty_image.fits")))
+spec_idx = np.squeeze(fits.getdata(next(result_dir.glob("*spectral_index_map.fits"))))
+
+channels = [0, model.shape[0] - 1]
+channel_names = ["first channel", "last channel"]
+rows = [
+    ("Reconstruction", model, "magma", True),
+    ("Dirty image", dirty, "magma", True),
+    ("Residual", residual, "twilight_shifted", False),
+]
+
+fig, axes = plt.subplots(3, 2, figsize=(8, 9), constrained_layout=True)
+for i, (name, cube, cmap, use_log) in enumerate(rows):
+    for j, channel in enumerate(channels):
+        ax = axes[i, j]
+        if use_log:
+            image = log_display(cube[channel], vmin=0.0, vmax=1.0)
+            im = ax.imshow(image, origin="lower", cmap=cmap, vmin=0.0, vmax=1.0)
+        else:
+            im = ax.imshow(
+                cube[channel],
+                origin="lower",
+                cmap=cmap,
+                vmin=-6e-3,
+                vmax=6e-3,
+            )
+        ax.set_title(f"{name}, {channel_names[j]}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+
+fig.savefig(figure_dir / "distributed_channel_diagnostics.svg", dpi=180)
+
+fig, ax = plt.subplots(figsize=(5.8, 5.0), constrained_layout=True)
+im = ax.imshow(spec_idx, origin="lower", cmap="rainbow", vmin=-6.0, vmax=0.0)
+ax.set_title("Spectral index map")
+ax.set_xticks([])
+ax.set_yticks([])
+fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02, label="spectral index")
+fig.savefig(figure_dir / "distributed_spectral_index.svg", dpi=180)
+
+plt.show()
+```
+
+The reconstruction and dirty-image panels are clipped to `[0, 1]` and displayed
+with the log transform `log10(1 + 9I)`, so the displayed range is `[0, 1]`.
+The residual panels use the shifted twilight colour map with range
+`[-6e-3, 6e-3]`. The spectral-index map uses the rainbow colour map with range
+`[-6, 0]`, where `0` maps to red and `-6` maps to purple.
+
+```{figure} ../_images/tutorials/distributed_channel_diagnostics.svg
+:alt: Placeholder for distributed channel diagnostics.
+
+First and last channel diagnostics for the reconstruction, dirty image, and
+residual dirty image.
+```
+
+```{figure} ../_images/tutorials/distributed_spectral_index.svg
+:alt: Placeholder for the distributed tutorial spectral-index map.
+
+Spectral-index map estimated from the reconstructed hyperspectral cube.
+```
 
 ## Summary and further reading
 
