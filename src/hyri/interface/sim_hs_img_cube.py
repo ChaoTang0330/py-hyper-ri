@@ -77,7 +77,7 @@ def stationary_gaussian_process(im_size, rho):
         ValueError: If the circulant embedding has negative eigenvalues below
             the numerical tolerance.
 
-    Notes:
+    Note:
         This implementation follows the block-circulant embedding used in the
         `Faceted-HyperSARA MATLAB code`_.
 

@@ -208,11 +208,11 @@ Currently, pyHyperRI implements the following algorithms:
 
 | Algorithm | Optimisation backend | Joint-channel imaging | Regularisation |
 | --- | --- | --- | --- |
-| [uSARA](#ref-repetti-2020) | Forward-backward | No | $\ell_1$ sparsity in a redundant wavelet dictionary and positivity |
-| [AIRI](#ref-terris-2023) | Plug-and-play forward-backward | No | AIRI denoisers |
-| [cAIRI](#ref-terris-2025) | Plug-and-play primal-dual | No | AIRI denoisers with a data-fidelity constraint |
-| [Hyper-uSARA](#ref-tang-2026) | Forward-backward | Yes | $\ell_{2,1}$ sparsity in a redundant wavelet dictionary and positivity |
-| [HyperAIRI](#ref-tang-2026) | Plug-and-play forward-backward | Yes | HyperAIRI denoisers |
+| uSARA ([Terris et al., 2023](#ref-terris-2023)) | Forward-backward | No | $\ell_1$ sparsity in a redundant wavelet dictionary and positivity |
+| AIRI ([Terris et al., 2023](#ref-terris-2023)) | Plug-and-play forward-backward | No | AIRI denoisers |
+| cAIRI ([Terris et al., 2025](#ref-terris-2025)) | Plug-and-play primal-dual | No | AIRI denoisers with a data-fidelity constraint |
+| Hyper-uSARA ([Tang et al., 2026](#ref-tang-2026)) | Forward-backward | Yes | $\ell_{2,1}$ sparsity in a redundant wavelet dictionary and positivity |
+| HyperAIRI ([Tang et al., 2026](#ref-tang-2026)) | Plug-and-play forward-backward | Yes | HyperAIRI denoisers |
 
 ## References
 
