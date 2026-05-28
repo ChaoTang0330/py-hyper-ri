@@ -26,7 +26,7 @@ from .io import env_int
 from .load_data import load_data_to_tensor
 
 
-def _set_rank_device(local_rank: int, backend: str) -> torch.device | None:
+def set_rank_device(local_rank: int, backend: str) -> torch.device | None:
     """Set the rank-local accelerator device for this process.
 
     This function binds the current CUDA and/or XPU device index before
@@ -126,7 +126,7 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
 
     # Bind this process to one local accelerator before distributed
     # initialisation or accelerator tensor creation.
-    rank_device = _set_rank_device(
+    rank_device = set_rank_device(
         param_comm["local_rank"], param_optimiser["dist_backend"]
     )
 

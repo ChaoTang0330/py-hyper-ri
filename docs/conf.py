@@ -42,9 +42,10 @@ autosummary_imported_members = False
 
 autodoc_default_options = {
     "members": True,
+    "private-members": True,
     "undoc-members": False,
     "special-members": "__call__",
-    "exclude-members": "__init__",
+    "exclude-members": "__init__, _abc_impl",
     "show-inheritance": True,
 }
 
@@ -56,7 +57,7 @@ autodoc_member_order = "bysource"
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 napoleon_include_init_with_doc = False
-napoleon_include_private_with_doc = False
+napoleon_include_private_with_doc = True
 napoleon_use_param = True
 napoleon_use_rtype = True
 napoleon_use_admonition_for_notes = True
