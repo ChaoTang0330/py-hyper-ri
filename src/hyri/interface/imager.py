@@ -26,6 +26,56 @@ from .io import env_int
 from .load_data import load_data_to_tensor
 
 
+def _set_rank_device(local_rank: int, backend: str) -> torch.device | None:
+    """Set the rank-local accelerator device for this process.
+
+    This function binds the current CUDA and/or XPU device index before
+    distributed initialisation and before accelerator tensors are created. The
+    launch environment may expose either all local accelerator devices to each
+    process or a single visible device through launcher-controlled visibility
+    variables. When only one accelerator is visible, local device index 0 is
+    selected.
+
+    Args:
+        local_rank (int): Process rank on the current node.
+        backend (str): Distributed backend name passed to
+            :func:`torch.distributed.init_process_group`.
+
+    Returns:
+        torch.device | None: Process-group device hint for backends that use
+        one. Returns ``torch.device("cuda")`` for the ``"nccl"`` backend after
+        setting the current CUDA device, and ``None`` otherwise.
+
+    Note:
+        The current implementation assumes a one-to-one mapping between local
+        processes and accelerator devices. Users may enforce this mapping before
+        launch with visibility environment variables such as
+        ``CUDA_VISIBLE_DEVICES``, or expose all local devices and let this
+        function select ``local_rank % device_count``. When only one device is
+        visible, index 0 is selected.
+
+        The return value is only used for the ``device_id`` argument of
+        :func:`torch.distributed.init_process_group`. It is returned for
+        ``"nccl"`` because PyTorch only documents process-group initialisation
+        effects for ``device_id`` under NCCL; other backends receive ``None``
+        even though the current CUDA/XPU device may still be set above.
+    """
+    if torch.cuda.is_available():
+        device_count = torch.cuda.device_count()
+        device_id = 0 if device_count == 1 else local_rank % device_count
+        torch.cuda.set_device(device_id)
+
+    if torch.xpu.is_available():
+        device_count = torch.xpu.device_count()
+        device_id = 0 if device_count == 1 else local_rank % device_count
+        torch.xpu.set_device(device_id)
+
+    if backend == "nccl":
+        return torch.device("cuda")
+
+    return None
+
+
 def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> None:
     """Prepare the imaging components and optionally run reconstruction.
 
@@ -64,9 +114,6 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
         "local_rank": env_int("LOCAL_RANK", 0),
         "local_world_size": env_int("LOCAL_WORLD_SIZE", 1),
         "node_rank": env_int("NODE_RANK", 0),
-        "rank_device_id": (
-            env_int("RANK_DEVICE_ID", 0) if torch.cuda.is_available() else None
-        ),
     }
     use_distributed = param_comm["world_size"] > 1
 
@@ -77,6 +124,12 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
             f"the number of effective channels ({param_optimiser['ch_effective']})."
         )
 
+    # Bind this process to one local accelerator before distributed
+    # initialisation or accelerator tensor creation.
+    rank_device = _set_rank_device(
+        param_comm["local_rank"], param_optimiser["dist_backend"]
+    )
+
     # Initialise torch.distributed only when multi-process imaging is requested.
     if use_distributed:
         dist.init_process_group(
@@ -84,7 +137,7 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
             init_method=param_optimiser["dist_init_method"],
             rank=param_comm["rank"],
             world_size=param_comm["world_size"],
-            device_id=param_comm["rank_device_id"],
+            device_id=rank_device,
         )
 
     # Print a short distributed-runtime summary from rank 0.
