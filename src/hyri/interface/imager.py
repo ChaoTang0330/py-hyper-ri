@@ -71,7 +71,7 @@ def set_rank_device(local_rank: int, backend: str) -> torch.device | None:
         torch.xpu.set_device(device_id)
 
     if backend == "nccl":
-        return torch.device("cuda")
+        return torch.device("cuda", index=device_id)
 
     return None
 
