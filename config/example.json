@@ -3,7 +3,7 @@
         "__comment": "Main",
         "main": {
             "src_name": [],
-            "data_file": "./data/3c353_meas_dt_1_seed_0.mat",
+            "data_file": "./data/3c353_sim_vla_meas_hs",
             "result_path": [],
             "algorithm": "usara",
             "im_dim_x": 512,
