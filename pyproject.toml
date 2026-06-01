@@ -20,12 +20,14 @@ dependencies = [
     "scikit-image>=0.26.0",
     "torchkbnufft>=1.5.2",
     "pytorch-finufft>=0.1.0",
-    "python-casacore",
 ]
 
 [project.optional-dependencies]
 cuda = [
     "cufinufft>=2.2.0",
+]
+ms = [
+    "python-casacore>=3.6.0",
 ]
 notebook = [
     "ipykernel",
