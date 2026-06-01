@@ -106,7 +106,8 @@ html_theme_options = {
         },
         {
             "name": "PyPI",
-            # TODO: Replace this with the package's PyPI project URL once it is available.
+            # TODO: Replace this with the package's PyPI project URL
+            # once it is available.
             "url": "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs",
             "icon": "fa-brands fa-python",
         },
@@ -187,9 +188,7 @@ def _github_path_for_page(pagename, context):
 def _add_github_source_url(app, pagename, templatename, context, doctree):
     notebook_source = f"{pagename}.ipynb"
     notebook_path = ROOT / "docs" / notebook_source
-    context["notebook_source"] = (
-        notebook_source if notebook_path.exists() else None
-    )
+    context["notebook_source"] = notebook_source if notebook_path.exists() else None
 
     github_path = _github_path_for_page(pagename, context)
     if github_path is None and context["notebook_source"] is not None:
