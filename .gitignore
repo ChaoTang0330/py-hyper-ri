@@ -30,6 +30,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+.hyri-env/
 
 # Python environments and packaging
 .venv/
