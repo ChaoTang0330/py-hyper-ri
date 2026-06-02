@@ -210,7 +210,7 @@ def load_data_to_tensor(
         ch_partition = [ch_cat_num] * ch_effctive
         ch_last = ch_start + ch_cat_num * ch_effctive
     verbose_print(
-        f"INFO: loading data from channel {ch_start + 1} to {ch_last} "
+        f"INFO: loading data from physical channel {ch_start + 1} to {ch_last} "
         f"with {ch_effctive} effective channels. ",
         verbose_general,
     )
@@ -223,8 +223,8 @@ def load_data_to_tensor(
         )
 
     # Derive per-rank channel ranges in distributed mode.
-    rank_ch_start = 0
-    rank_ch_last = sum(ch_partition)
+    rank_ch_start = ch_start
+    rank_ch_last = ch_start + sum(ch_partition)
     rank_eff_ch_start = 0
     rank_eff_ch_last = ch_effctive
     if is_distributed:
@@ -245,9 +245,9 @@ def load_data_to_tensor(
     if is_distributed:
         dist.barrier()
     verbose_print(
-        f"INFO: rank {rank} loading channels from "
+        f"INFO: rank {rank} loading physical channel "
         f"{rank_ch_start + 1} to {rank_ch_last}, "
-        f"corresponding to effective channels from "
+        f"corresponding to effective channel "
         f"{rank_eff_ch_start + 1} to {rank_eff_ch_last}.",
         verbose,
     )
