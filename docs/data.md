@@ -65,8 +65,9 @@ Optional fields:
   with the corresponding loading option.
 
 `weightsNat`:
-: Natural weights for the channel. This may be a scalar or a vector matching
-  the number of valid samples. If absent, natural weights are set to one.
+: Natural whitening weights for the channel, conventionally
+  `sqrt(1 / variance)`. This may be a scalar or a vector matching the number
+  of valid samples. If absent, natural weights are set to one.
 
 `weightsImg`:
 : Imaging weights for the channel. These are loaded only when requested. If
@@ -85,18 +86,10 @@ Image files read or written by pyHyperRI use the FITS format.
 
 ## Measurement Set Conversion
 
-[TODO: finalise this section after finising the converter]
-
-Measurement Set data can be converted into the `.mat` layout expected by
-pyHyperRI.
-
-The `ms2mat` utility prepares Measurement Set data for pyHyperRI by writing the
-`msSpecs.mat` metadata file and the per-channel `data_ch_<index>.mat` files.
-Use the converter when starting from Measurement Set data rather than a
-pre-existing `.mat` measurement directory.
-
-See the Measurement Set conversion documentation for supported assumptions and
-commands.
+Measurement Set data can be converted into this `.mat` layout with
+`hyri-ms2mat`. See {ref}`Measurement Set Support <measurement-set-support>`
+for dependency installation and {ref}`Convert Measurement Sets <convert-measurement-sets>`
+for command-line usage.
 
 ## Example Data
 

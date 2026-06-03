@@ -100,6 +100,7 @@ pyHyperRI provides optional dependency groups for common workflows:
 
 - `notebook`: Jupyter notebook support.
 - `cuda`: CUDA NUFFT support through `cufinufft`.
+- `ms`: Measurement Set conversion support through `python-casacore`.
 - `dev`: testing, formatting, packaging, and release tools.
 - `docs`: documentation build tools.
 
@@ -115,6 +116,62 @@ From a source checkout, combine optional groups with an editable install:
 pip install -e ".[dev,docs,notebook]"
 ```
 
+(measurement-set-support)=
+### Measurement Set Support
+
+Measurement Set conversion requires `python-casacore`, which depends on native
+casacore libraries. Installation support depends on the operating system and
+package manager. See the
+[`python-casacore` documentation](https://casacore.github.io/python-casacore/),
+the
+[`python-casacore` conda-forge package](https://anaconda.org/conda-forge/python-casacore),
+and the
+[`casacore` installation guide](https://github.com/casacore/casacore#installation)
+for upstream installation details.
+
+On Linux, install the optional pip dependency group:
+
+```bash
+pip install "pyHyperRI[ms]"
+```
+
+From a source checkout on Linux, use:
+
+```bash
+pip install -e ".[ms]"
+```
+
+On macOS, using conda-forge to install `python-casacore` is simpler because it
+also installs the native `casacore` dependency. Users can install the rest of
+pyHyperRI with pip and install `python-casacore` with conda:
+
+```bash
+conda install conda-forge::python-casacore
+```
+
+Then verify the installation with:
+
+```bash
+python -c "import casacore"
+```
+
+If the import fails with a GSL library error, reinstall GSL from conda-forge:
+
+```bash
+conda install conda-forge::gsl --force-reinstall
+```
+
+For a source checkout on macOS, replace the final command with:
+
+```bash
+pip install -e .
+```
+
+Windows users need a
+working `casacore` installation before installing `python-casacore`; refer to
+the [`casacore` installation guide](https://github.com/casacore/casacore#installation)
+for upstream instructions.
+
 ## Verify Installation
 
 Check that the package and command-line tools are available.
@@ -122,6 +179,7 @@ Check that the package and command-line tools are available.
 ```bash
 hyri-config --help
 hyri-imaging --help
+hyri-ms2mat --help
 ```
 
 <!--

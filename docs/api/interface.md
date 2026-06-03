@@ -15,6 +15,7 @@
    hyri.interface.io
    hyri.interface.imaging_param
    hyri.interface.load_data
+   hyri.interface.ms2mat
    hyri.interface.gen_imaging_weights
    hyri.interface.dist_util
    hyri.interface.spectral_index

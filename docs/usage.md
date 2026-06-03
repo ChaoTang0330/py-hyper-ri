@@ -108,6 +108,65 @@ hyri-imaging \
   --ch_partition 9 9 9 9
 ```
 
+(convert-measurement-sets)=
+## Convert Measurement Sets
+
+Measurement Set data can be converted into the `.mat` layout expected by
+pyHyperRI with `hyri-ms2mat`. Install Measurement Set support first; see
+{ref}`Measurement Set Support <measurement-set-support>`.
+
+Inspect the available spectral windows and frequency-channel grouping plan
+without writing files:
+
+```bash
+hyri-ms2mat path/to/target.ms --dry_run
+```
+
+Convert an MS table:
+
+```bash
+hyri-ms2mat path/to/target.ms --output_path data --src_name target --src_id 0
+```
+
+The converter writes:
+
+```text
+data/target/
+  msSpecs.mat
+  data_ch_1.mat
+  data_ch_2.mat
+  ...
+```
+
+If `--src_name` is omitted, the output folder is derived from the MS filename
+with a trailing `.ms` suffix removed. Channels from all spectral windows are
+flattened, grouped by shared observation frequency, and sorted from low to
+high, so `data_ch_1.mat` corresponds to the lowest grouped frequency. If
+different spectral windows contain the same frequency, their visibilities are
+merged into the same output channel.
+
+Use `--freq_tol_hz` to merge nearly equal frequencies. The converter caps the
+effective tolerance below the smallest frequency spacing within any single
+spectral window so neighbouring channels in one spectral window are not merged.
+
+Use `--ch_start` and `--ch_last` to convert a 1-based inclusive subset after
+frequency grouping and sorting. The converter still stores the full grouped
+frequency list in `msSpecs.mat`; partial conversion only limits which
+`data_ch_<index>.mat` files are written. File indices remain global, so
+`--ch_start 5` writes `data_ch_5.mat`.
+
+The shared `uvw` array in `msSpecs.mat` contains all rows for the selected
+field, not only rows from the selected spectral windows, so the metadata file is
+stable when `--ch_start` or `--ch_last` changes. Per-channel files mark
+non-contributing rows as flagged.
+
+By default, the converter reads `CORRECTED_DATA` and falls back to `DATA` when
+`CORRECTED_DATA` is unavailable. It extracts Stokes I from the first and last
+correlations using their natural weights, stores `weightsNat` as
+`sqrt(w_first + w_last)`, applies `FLAG`, `FLAG_ROW`, invalid-data, non-positive
+weight, and `--min_uv` baseline filtering, and writes MS imaging weights when
+available.
+
 ## Use AIRI Denoisers
 
 Packaged AIRI denoisers can be selected through the imaging configuration.

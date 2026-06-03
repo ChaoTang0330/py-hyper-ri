@@ -109,6 +109,12 @@ p.rubric,
   gap: 0.35rem;
 }
 
+/* Keep full reconstruction logs readable without stretching tutorial pages. */
+.hyri-reconstruction-log .cell_output {
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
 .bd-sidebar-secondary .hyri-sidebar-link,
 .bd-sidebar-secondary .hyri-sidebar-link:visited {
   align-items: center;

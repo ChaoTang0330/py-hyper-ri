@@ -1,4 +1,11 @@
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".cell_output pre").forEach((output) => {
+    if (!output.textContent?.includes("hyri-imaging --config")) {
+      return;
+    }
+    output.closest(".cell")?.classList.add("hyri-reconstruction-log");
+  });
+
   const insertTitle = (target, text) => {
     if (!target || target.previousElementSibling?.classList.contains("hyri-autodoc-section-title")) {
       return;
