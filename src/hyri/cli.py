@@ -60,5 +60,18 @@ def run_config() -> None:
     create_config()
 
 
+def run_ms2mat() -> None:
+    """Run the command-line Measurement Set conversion entry point.
+
+    This function is linked to the command-line entry point ``hyri-ms2mat``. It
+    launches :func:`.interface.ms2mat.ms2mat`, which parses command-line
+    arguments and converts a Measurement Set into the ``.mat`` data layout used
+    by this package.
+    """
+    from .interface.ms2mat import ms2mat
+
+    ms2mat()
+
+
 if __name__ == "__main__":
     run_imager()
