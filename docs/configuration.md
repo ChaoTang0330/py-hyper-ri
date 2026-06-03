@@ -2,35 +2,36 @@
 
 ## Overview
 
-The `hyri-imaging` command accepts both command-line inputs and a JSON
+The `hyri imaging` command accepts both command-line inputs and a JSON
 configuration file. Command-line inputs are useful for quick overrides, while
 the configuration file gives full control of the imaging settings, including
 the input data, image grid, channel selection, weighting, compute devices,
 measurement operator, algorithm, and algorithm-specific parameters.
 
-pyHyperRI also provides the `hyri-config` wizard to help create a configuration
+pyHyperRI also provides the `hyri config` wizard to help create a configuration
 file from the packaged template.
 
-The generated configuration file can then be passed to `hyri-imaging` with the `--config` option followed by the file path.
+The generated configuration file can then be passed to `hyri imaging` with the
+`--config` option followed by the file path.
 
 ## Create a Configuration File
 
 Create a default configuration file without prompts:
 
 ```bash
-hyri-config --default --output hyri_config.json
+hyri config --default --output hyri_config.json
 ```
 
 Create a configuration file through the interactive wizard:
 
 ```bash
-hyri-config --output hyri_config.json
+hyri config --output hyri_config.json
 ```
 
 Overwrite an existing output file:
 
 ```bash
-hyri-config --default --output hyri_config.json --overwrite
+hyri config --default --output hyri_config.json --overwrite
 ```
 
 The wizard can ask for data, image-grid, channel, weighting, output, compute,

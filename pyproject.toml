@@ -78,6 +78,7 @@ hyri = [
 ]
 
 [project.scripts]
+hyri = "hyri.cli:run_hyri"
 hyri-imaging = "hyri.cli:run_imager"
 hyri-config = "hyri.cli:run_config"
 hyri-ms2mat = "hyri.cli:run_ms2mat"

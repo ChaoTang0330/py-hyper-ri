@@ -1,4 +1,59 @@
-"""Parse user inputs and launch the imaging workflow."""
+"""Parse user inputs and launch package command-line workflows."""
+
+
+def run_hyri() -> None:
+    """Run the top-level pyHyperRI command-line entry point.
+
+    This function is linked to the command-line entry point ``hyri``. It
+    dispatches subcommands such as ``hyri imaging``, ``hyri config``, and
+    ``hyri ms2mat`` to the same workflow functions used by the standalone
+    command-line entry points.
+    """
+    import sys
+
+    commands = {
+        "imaging": ("hyri-imaging", run_imager),
+        "config": ("hyri-config", run_config),
+        "ms2mat": ("hyri-ms2mat", run_ms2mat),
+    }
+    command_descriptions = {
+        "imaging": "run hyperspectral radio interferometric imaging",
+        "config": "create or fetch an imaging configuration file",
+        "ms2mat": "convert a Measurement Set into package-compatible .mat files",
+    }
+
+    if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
+        print("Usage: hyri <command> [options]\n", flush=True)
+        print(
+            "pyHyperRI is a Python package for astronomical radio "
+            "interferometric imaging.",
+            flush=True,
+        )
+        print("Run pyHyperRI command-line workflows.\n", flush=True)
+        print("Commands:", flush=True)
+        for command in commands:
+            print(f"  {command:<8} {command_descriptions[command]}", flush=True)
+        print("\nExamples:", flush=True)
+        print("  hyri imaging --config config.json", flush=True)
+        print("  hyri config", flush=True)
+        print("  hyri ms2mat --help", flush=True)
+        print("\nUse 'hyri <command> --help' for command-specific options.", flush=True)
+        print("Documentation: <TODO: doc link>", flush=True)
+        return
+
+    command_name = sys.argv[1]
+    if command_name not in commands:
+        print(f"Unknown command: {command_name}", file=sys.stderr, flush=True)
+        print(
+            "Run 'hyri --help' to list available commands.",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise SystemExit(2)
+
+    script_name, command = commands[command_name]
+    sys.argv = [script_name, *sys.argv[2:]]
+    command()
 
 
 def run_imager() -> None:

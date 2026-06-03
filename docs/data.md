@@ -87,7 +87,7 @@ Image files read or written by pyHyperRI use the FITS format.
 ## Measurement Set Conversion
 
 Measurement Set data can be converted into this `.mat` layout with
-`hyri-ms2mat`. See {ref}`Measurement Set Support <measurement-set-support>`
+`hyri ms2mat`. See {ref}`Measurement Set Support <measurement-set-support>`
 for dependency installation and {ref}`Convert Measurement Sets <convert-measurement-sets>`
 for command-line usage.
 

@@ -174,12 +174,10 @@ for upstream instructions.
 
 ## Verify Installation
 
-Check that the package and command-line tools are available.
+Check that the package and top-level command-line tool are available.
 
 ```bash
-hyri-config --help
-hyri-imaging --help
-hyri-ms2mat --help
+hyri -h
 ```
 
 <!--

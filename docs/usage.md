@@ -2,7 +2,21 @@
 
 ## Overview
 
-After the input data is prepared, launch imaging jobs with `hyri-imaging`.
+pyHyperRI provides a top-level `hyri` command with subcommands for the main
+workflows:
+
+```bash
+hyri -h
+hyri imaging --help
+hyri config --help
+hyri ms2mat --help
+```
+
+The standalone commands `hyri-imaging`, `hyri-config`, and `hyri-ms2mat` are
+also available for compatibility. For example, `hyri imaging` and
+`hyri-imaging` launch the same imaging workflow.
+
+After the input data is prepared, launch imaging jobs with `hyri imaging`.
 If no configuration file is provided, the command reads the default
 configuration bundled with the package. Command-line overrides are available
 for common run settings such as the input data directory, output directory,
@@ -13,20 +27,20 @@ algorithm, image size, denoiser shelf, channel range, and run ID.
 Run an imaging algorithm with the packaged default configuration:
 
 ```bash
-hyri-imaging --data_file <DATA_DIRECTORY>
+hyri imaging --data_file <DATA_DIRECTORY>
 ```
 
 Run with an explicit configuration file:
 
 ```bash
-hyri-imaging --config <CONFIG_FILE>
+hyri imaging --config <CONFIG_FILE>
 ```
 
 `--config` can also be written as `-c`. If it is omitted, pyHyperRI reads the
 bundled `hyri/config/default.json` template. See [Configuration](configuration)
 for details on the configuration file generations and contents.
 
-`hyri-imaging` also accepts the following command-line arguments to override the 
+`hyri imaging` also accepts the following command-line arguments to override the
 corresponding default imaging settings or the ones in the provided configuration
 file:
 
@@ -94,14 +108,14 @@ Examples:
 
 ```bash
 # Load physical channels 1 through 36 and reconstruct 36 effective channels.
-hyri-imaging \
+hyri imaging \
   --data_file <DATA_DIRECTORY> \
   --ch_start 1 \
   --ch_last 36 \
   --ch_effective 36
 
 # Group 36 physical channels into 4 effective channels of 9 physical channels each.
-hyri-imaging \
+hyri imaging \
   --data_file <DATA_DIRECTORY> \
   --ch_start 1 \
   --ch_last 36 \
@@ -112,20 +126,20 @@ hyri-imaging \
 ## Convert Measurement Sets
 
 Measurement Set data can be converted into the `.mat` layout expected by
-pyHyperRI with `hyri-ms2mat`. Install Measurement Set support first; see
+pyHyperRI with `hyri ms2mat`. Install Measurement Set support first; see
 {ref}`Measurement Set Support <measurement-set-support>`.
 
 Inspect the available spectral windows and frequency-channel grouping plan
 without writing files:
 
 ```bash
-hyri-ms2mat path/to/target.ms --dry_run
+hyri ms2mat path/to/target.ms --dry_run
 ```
 
 Convert an MS table:
 
 ```bash
-hyri-ms2mat path/to/target.ms --output_path data --src_name target --src_id 0
+hyri ms2mat path/to/target.ms --output_path data --src_name target --src_id 0
 ```
 
 The converter writes:
@@ -183,7 +197,7 @@ For AIRI family of algorithms, set `dnn_shelf_path` in the matching algorithm
 section of the configuration file, or override it from the command line:
 
 ```bash
-hyri-imaging \
+hyri imaging \
   --algorithm airi \
   --data_file <DATA_DIRECTORY> \
   --dnn_shelf_path shelf_airi_oaid.csv
@@ -261,14 +275,14 @@ If `run_id` is set, `runID_<run_id>_` is appended to the prefix.
 
 Runtime logs are printed to standard output. In batch systems, capture stdout
 and stderr with the scheduler options. Metrics are not computed automatically
-by `hyri-imaging`; helper scripts for evaluation are available under `scripts`.
+by `hyri imaging`; helper scripts for evaluation are available under `scripts`.
 
 ## Examples
 
 ### uSARA
 
 ```bash
-hyri-imaging \
+hyri imaging \
   --algorithm usara \
   --data_file <DATA_DIRECTORY> \
   --im_dim_x 512 \
@@ -281,7 +295,7 @@ hyri-imaging \
 ### HyperAIRI
 
 ```bash
-hyri-imaging \
+hyri imaging \
   --algorithm hyperairi \
   --data_file <DATA_DIRECTORY> \
   --ch_start 1 \
@@ -298,7 +312,7 @@ The number of processes must not exceed `ch_effective`.
 
 ```bash
 torchrun --standalone --nproc-per-node=4 \
-  hyri-imaging \
+  hyri imaging \
   --algorithm hyper-usara \
   --data_file <DATA_DIRECTORY> \
   --ch_start 1 \
