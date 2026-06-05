@@ -1,149 +1,149 @@
-# Small scale RI imaging
-[![python](https://img.shields.io/badge/Python-3.11-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
-[![pytorch](https://img.shields.io/badge/PyTorch-2.5.1-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
-[![license](https://img.shields.io/badge/license-GPL--3.0-brightgreen.svg)](LICENSE)
+# pyHyperRI
 
-- [Small scale RI imaging](#small-scale-ri-imaging)
-  - [Description](#description)
-  - [Dependencies](#dependencies)
-  - [Installation](#installation)
-    - [Cloning the project](#cloning-the-project)
-    - [Updating submodules (optional)](#updating-submodules-optional)
-    - [Pretrained AIRI denoisers](#pretrained-airi-denoisers)
-    - [Python environment](#python-environment)
-  - [Input Files](#input-files)
-    - [Measurement file](#measurement-file)
-    - [Configuration file](#configuration-parameter-file)
-  - [Usage and Examples](#usage-and-examples)
+[![python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![pytorch](https://img.shields.io/badge/PyTorch-enabled-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
+[![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](LICENSE)
 
-## Description
+pyHyperRI is a PyTorch-based platform for developing, testing, and
+benchmarking radio-interferometric (RI) imaging algorithms. The current package
+focuses on intensity imaging, with workflows for both monochromatic and
+distributed hyperspectral reconstruction.
 
-This repository provides pure Python implementation of ``uSARA``, ``AIRI`` and ``cAIRI`` for small scale RI imaging problem which focuses on monochromatic intensity and a narrow filed of view.
+The package is installed as `pyHyperRI` and imported in Python as `hyri`.
 
-``uSARA``[1,2] is the unconstrained counterpart of the ``SARA`` algorithm. It is underpinned by the forward-backward algorithmic structure for solving inverse imaging problem and uses a handcrafted sparsity-based image model.
+## Key Features
 
-``AIRI``[2] and its constraint variant ``cAIRI``[3] are Plug-and-Play (PnP) algorithms used to solve the inverse imaging problem. By inserting carefully trained AIRI denoisers into the proximal splitting algorithms, one waives the computational complexity of optimisation algorithms induced by sophisticated image priors, and the sub-optimality of handcrafted priors compared to Deep Neural Networks.
-
-The details of these algorithms are discussed in the following papers.
-
->[1] Repetti, A., & Wiaux, Y., [A forward-backward algorithm for reweighted procedures: Application to radio-astronomical imaging](https://doi.org/10.1109/ICASSP40776.2020.9053284). *IEEE ICASSP 2020*, 1434-1438, 2020.
->
->[2] Terris, M., Dabbech, A., Tang, C., & Wiaux, Y., [Image reconstruction algorithms in radio interferometry: From handcrafted to learned regularization denoisers](https://doi.org/10.1093/mnras/stac2672). *MNRAS, 518*(1), 604-622, 2023.
->
->[3] Terris, M., Tang, C., Jackson, A., & Wiaux, Y., [The AIRI plug-and-play algorithm for image reconstruction in radio-interferometry: variations and robustness](https://arxiv.org/abs/2312.07137v3), 2024, *preprint arXiv:2312.07137v3.* 
-
-We provide tutorials in the format of Jupyter notebook for both AIRI and uSARA as a quick start guide about how to run the scripts of this repository.
-
-We also point the readers to [AIRI](https://github.com/basp-group/AIRI) and [uSARA](https://github.com/basp-group/uSARA) repositories for their MATLAB implementations.
-
-
-## Dependencies 
-
-This repository relies on two packages:
-
-1. [`RI Measurement Operator`](https://github.com/basp-group/RI-measurement-operator/tree/python) for the python implementation of radio-interferometric measurement operator;
-2. [`PyTorch Wavelet Toolbox`](https://github.com/v0lta/PyTorch-Wavelet-Toolbox) for SARA wavelet dictionary.
-
-These packages are associated with the following publication:
-
-
->[4] Wolter, M., Blanke, F., Garcke, J., & Hoyt, C. T., [ptwt-The PyTorch Wavelet Toolbox](https://www.jmlr.org/papers/v25/23-0636.html). *JLMR*, 25(80), 1-7. 2024.
+- Modular components for RI algorithm development: measurement operators,
+  regularisers, denoisers, and optimisers.
+- Intensity imaging workflows for monochromatic and hyperspectral data.
+- Implemented algorithms: uSARA, AIRI, cAIRI, Hyper-uSARA, and HyperAIRI.
+- PyTorch-native device support across CPU, CUDA, MPS, and XPU where available.
+- Distributed hyperspectral imaging through `torch.distributed`.
+- NUFFT measurement operators with FINUFFT and TorchKbNUFFT backends.
 
 ## Installation
 
-### Cloning the project
+Install PyTorch first by following the
+[official PyTorch installation guide](https://pytorch.org/get-started/locally/),
+because the correct build depends on the operating system and target device.
 
-To clone the project with the required submodules, you may consider one of the following set of instructions.
-
-- Cloning the project using `https`: you should run the following command
-```bash
-git clone --recurse-submodules https://github.com/basp-group/Small-scale-RI-imaging.git
-```
-- Cloning the project using SSH key for GitHub: you should run the following command
-```bash
-git clone git@github.com:basp-group/Small-scale-RI-imaging.git
-```
-
-Next, edit the `.gitmodules` file, replacing the `https` addresses with the `git@github.com` counterpart as follows: 
+Then install pyHyperRI:
 
 ```bash
-[submodule "src/ri_measurement_operator"]
-	path = src/ri_measurement_operator
-	url = git@github.com/basp-group/RI-measurement-operator.git
-	branch = python
+pip install pyHyperRI
 ```
 
-Finally, follow the instructions in the next session [Updating submodules (optional)](#updating-submodules-optional) to clone the submodule into the repository's path.
-
-The full path to this repository is referred to as `$SSRI` in the remainder of the documentation.
-
-### Updating submodules (optional)
-
-To update the submodules from your local `$SSRI` repository, run the following commands: 
+If CUDA devices are available, install the CUDA optional dependency group:
 
 ```bash
-git pull
-git submodule sync --recursive          # update submodule address, in case the url has changed
-git submodule update --init --recursive # update the content of the submodules
-git submodule update --remote --merge   # fetch and merge latest state of the submodule
+pip install "pyHyperRI[cuda]"
 ```
 
-###  Pretrained AIRI denoisers
-If you'd like to use our trained AIRI denoisers, you can find the ONNX files on [Heriot-Watt Research Portal](https://doi.org/10.17861/aa1f43ee-2950-4fce-9140-5ace995893b0). You should download `v1_airi_astro-based_oaid_shelf.zip` and `v1_airi_mri-based_mrid_shelf.zip`, then copy the unzipped folders to ``$SSRI/airi_denoisers/`` folder of this repository. Alternatively, make sure to update the full paths to the DNNs in the `.csv` file of the denoiser shelf.
-
-### Python environment
-We recommend to start by creating virtual environment with Python version higher than 3.11 using management tools such as ``conda`` or ``venv``. Refer to [PyTorch official website](https://pytorch.org) for the proper command to install the adequate PyTorch version. Finally, install other required packages using the following command:
+Measurement Set dependency is available through the `ms` optional
+dependency group:
 
 ```bash
-pip install -r requirements.txt
+pip install "pyHyperRI[ms]"
 ```
 
-## Input Files
-### Measurement file
-The current code takes as input data a measurement file in ``.mat`` format containing the following fields:
+Use this option mainly on Linux. On other systems, the
+prerequisite `casacore` usually needs to be installed separately before installing
+`python-casacore`. See the documentation for detailed installation guide.
 
-```python 
-  "y"               # vector; data (Stokes I)
-  "u"               # vector; u coordinate (in units of the wavelength)
-  "v"               # vector; v coordinate (in units of the wavelength)
-  "w"               # vector; w coordinate (in units of the wavelength)
-  "nW"              # vector; inverse of the noise standard deviation 
-  "nWimag"          # vector; square root of the imaging weights if available (Briggs or uniform), empty otherwise
-  "frequency"       # scalar; observation frequency
-  "maxProjBaseline" # scalar; maximum projected baseline (in units of the wavelength; formally  max(sqrt(u.^2+v.^2)))
-```
-
-An example measurement file ``3c353_meas_dt_1_seed_0.mat`` is provided in the folder ``$SSRI/data``. The full synthetic test set used in [1] can be found in this (temporary) [Dropbox link](https://www.dropbox.com/scl/fo/et0o4jl0d9twskrshdd7j/h?rlkey=gyl3fj3y7ca1tmoa1gav71kgg&dl=0).
-
-To extract the measurement file from Measurement Set Tables (MS), you can use the utility Python script `$SSRI/ms2mat/ms2mat.py`. Instructions are provided in the [Readme File](https://github.com/basp-group/Small-scale-RI-imaging/blob/main/ms2mat/README.md).
-
-
-### Configuration (parameter) file
-The configuration file is a ``.json`` format file comprising all parameters to run the different algorithms. A template file is provided in `$SSRI/config/`. An example `example.json` is provided in `$SSRI/config/`. A detailed description about the fields in the configuration file is provided [here](https://github.com/basp-group/Small-scale-RI-imaging/blob/main/config/README.md).
-
-## Usage and Examples
-The algorithms can be launched through script `run_imager.py`. It uses the configuration file ``$SSRI/config/example.json``. 
-
-```BASH
-python run_imager.py
-```
-
-It also accepts 12 optional name-argument pairs which will overwrite corresponding fields in the configuration file.
+For a source install:
 
 ```bash
-python run_imager.py \
-    -c $PTH_CONFIG \                    # path of the configuration file
-    --src_name $SRC_NAME \               # name of the target src used for output filenames
-    --data_file $DATA_FILE \             # path of the measurement file
-    --result_path  $RESULT_PATH \        # path where the result folder will be created
-    --algorithm  $ALGORITHM \            # algorithm that will be used for imaging
-    --im_dim_x  $IM_DIM_X \              # horizontal number of pixels in the final reconstructed image
-    --im_dim_y  $IM_DIM_Y \              # vertical number of pixels in the final reconstructed image
-    --dnn_shelf_path  $DNN_SHELF_PATH \  # path of the denoiser shelf configuration file
-    --im_pixel_size  $IM_PIXEL_SIZE \    # pixel size of the reconstructed image in the unit of arcsec
-    --superresolution  $SUPERRE \        # used if pixel size not provided 
-    --groundtruth  $GROUNDTRUTH \        # path of the groundtruth image when available
-    --run_id  $RUN_ID                    # identification number of the imaging run used for output filenames
+git clone <TODO: REPOSITORY_URL>
+cd py-hyper-ri
+pip install -e .
 ```
 
-Detailed instructions for how to launch `uSARA` and `AIRI` are provided in [tutorial_airi_python.ipynb](./tutorial_airi_python.ipynb) and [tutorial_usara_python.ipynb](./tutorial_usara_python.ipynb). The scripts in these two Jupyter notebooks will reconstruct the groundtruth image `$SSRI/data/3c353_gdth.fits` from the measurement file `$SSRI/data/3c353_meas_dt_1_seed_0.mat`. The results will be saved in the folder `$SSRI/results/`.
+For development on Linux with CUDA devices, install all optional dependencies:
+
+```bash
+pip install -e ".[all]"
+```
+
+To build the documentation locally:
+
+```bash
+make docs
+```
+
+To verify the installation, run
+
+```bash
+hyri --help
+```
+
+## Minimal Example
+
+Run an imaging job by providing the algorithm, super-resolution factor, and
+measurement directory:
+
+```bash
+hyri imaging \
+  --algorithm usara \
+  --superresolution 1.5 \
+  --data_file ./data/3c353_sim_vla_meas_hs
+```
+
+Use `hyri imaging --help` to inspect available command-line options.
+
+## Documentation
+
+Full documentation: `<TODO: DOCS_URL>`
+
+The documentation covers the input data format, general usage, configuration
+files, tutorials, and the API reference.
+
+## Citation
+
+If you use pyHyperRI, please cite this software repository using the metadata in
+[`CITATION.cff`](CITATION.cff). If you use specific implemented methods, please
+also cite the relevant method papers listed in the documentation.
+
+## License
+
+pyHyperRI is distributed under the [BSD 3-Clause License](LICENSE).
+
+## Key Dependencies
+
+pyHyperRI builds on several external packages. The full dependency list is declared in
+[`pyproject.toml`](pyproject.toml). Key dependencies and their associated papers include:
+
+- **[Astropy](https://www.astropy.org/)**: Astropy Collaboration et al.,
+  [The Astropy Project: Sustaining and Growing a Community-oriented Open-source Project and the Latest Major Release](https://doi.org/10.3847/1538-4357/ac7c74),
+  *The Astrophysical Journal*, 2022.
+- **[casacore](https://casacore.github.io/casacore/) and
+  [python-casacore](https://casacore.github.io/python-casacore/)**:
+  van Diepen,
+  [Casacore Table Data System and its use in the MeasurementSet](https://doi.org/10.1016/j.ascom.2015.06.002),
+  *Astronomy and Computing*, 2015.
+- **[FINUFFT](https://finufft.readthedocs.io/) and
+  [cuFINUFFT](https://finufft.readthedocs.io/en/latest/c_gpu.html)**:
+  Barnett et al.,
+  [A Parallel Nonuniform Fast Fourier Transform Library Based on an Exponential of Semicircle Kernel](https://doi.org/10.1137/18M120885X),
+  *SIAM Journal on Scientific Computing*, 2019; Shih et al.,
+  [cuFINUFFT: a load-balanced GPU library for general-purpose nonuniform FFTs](https://doi.org/10.1109/IPDPSW52791.2021.00105), *IPDPSW*,
+  2021.
+- **[NumPy](https://numpy.org/)**: Harris et al.,
+  [Array programming with NumPy](https://doi.org/10.1038/s41586-020-2649-2),
+  *Nature*, 2020.
+- **[PyTorch](https://pytorch.org/)**: Paszke et al.,
+  [PyTorch: An Imperative Style, High-Performance Deep Learning Library](https://papers.neurips.cc/paper/9015-pytorch-an-imperative-style-high-performance-deep-learning-library),
+  NeurIPS 2019.
+- **[PyTorch Wavelet Toolbox](https://pytorch-wavelet-toolbox.readthedocs.io/en/latest/)**:
+  Wolter et al.,
+  [ptwt - The PyTorch Wavelet Toolbox](https://www.jmlr.org/papers/v25/23-0636.html),
+  *Journal of Machine Learning Research*, 2024.
+- **[scikit-image](https://scikit-image.org/)**: van der Walt et al.,
+  [scikit-image: image processing in Python](https://doi.org/10.7717/peerj.453),
+  *PeerJ*, 2014.
+- **[SciPy](https://scipy.org/)**: Virtanen et al.,
+  [SciPy 1.0: fundamental algorithms for scientific computing in Python](https://doi.org/10.1038/s41592-019-0686-2),
+  *Nature Methods*, 2020.
+- **[TorchKbNUFFT](https://torchkbnufft.readthedocs.io/en/stable/)**:
+  Muckley et al.,
+  [TorchKbNufft: A High-Level, Hardware-Agnostic Non-Uniform Fast Fourier Transform](https://mmuckley.github.io/assets/publications/2020muckleytorchkbnufft.pdf), *ISMRM Workshop on Data Sampling \& Image Reconstruction*,
+  2020.
