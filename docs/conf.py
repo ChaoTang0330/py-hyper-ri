@@ -10,8 +10,8 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 project = "pyHyperRI"
-author = "Chao Tang"
-copyright = "2026, Chao Tang"
+author = "Chao Tang, Adrian Jackson"
+copyright = "2026, Chao Tang, Adrian Jackson, and contributors"
 
 release = "1.0.0"
 version = release
