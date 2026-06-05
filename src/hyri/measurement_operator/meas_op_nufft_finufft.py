@@ -132,7 +132,7 @@ class MeasOpFinufft(MeasOpNUFFT):
         # FINUFFT consumes coordinates as a 2 x M trajectory tensor.
         self._traj = self._traj.squeeze(0)
 
-    def _GA(self, x: torch.Tensor) -> torch.Tensor:
+    def _nufft_op(self, x: torch.Tensor) -> torch.Tensor:
         """Apply forward FINUFFT and data weighting.
 
         Args:
@@ -152,7 +152,7 @@ class MeasOpFinufft(MeasOpNUFFT):
             * self._data_weight
         )
 
-    def _AtGt(self, y: torch.Tensor) -> torch.Tensor:
+    def _nufft_adj_op(self, y: torch.Tensor) -> torch.Tensor:
         """Apply adjoint FINUFFT and data weighting.
 
         Args:

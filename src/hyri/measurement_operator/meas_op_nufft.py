@@ -99,7 +99,7 @@ class MeasOpNUFFT(MeasOp):
         self._mode = None
 
     @abstractmethod
-    def _GA(self, x: torch.Tensor) -> torch.Tensor:
+    def _nufft_op(self, x: torch.Tensor) -> torch.Tensor:
         """Apply backend-specific forward NUFFT with imaging weighting.
 
         Args:
@@ -111,7 +111,7 @@ class MeasOpNUFFT(MeasOp):
         return NotImplemented
 
     @abstractmethod
-    def _AtGt(self, y: torch.Tensor) -> torch.Tensor:
+    def _nufft_adj_op(self, y: torch.Tensor) -> torch.Tensor:
         """Apply backend-specific adjoint NUFFT with imaging weighting.
 
         Args:
@@ -132,7 +132,7 @@ class MeasOpNUFFT(MeasOp):
             torch.Tensor: Visibility-domain output tensor.
         """
 
-        return self._GA(x) * self._precond_weight
+        return self._nufft_op(x) * self._precond_weight
 
     def adjoint_op(self, y: torch.Tensor) -> torch.Tensor:
         """Apply the adjoint measurement operator.
@@ -145,9 +145,9 @@ class MeasOpNUFFT(MeasOp):
         """
 
         if self._real_flag:
-            return torch.real(self._AtGt(y * self._precond_weight))
+            return torch.real(self._nufft_adj_op(y * self._precond_weight))
 
-        return self._AtGt(y * self._precond_weight)
+        return self._nufft_adj_op(y * self._precond_weight)
 
     def set_precond_weight(self, precond_weight: torch.Tensor) -> None:
         """Set the data-space preconditioning weight.
