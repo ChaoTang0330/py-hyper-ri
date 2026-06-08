@@ -81,14 +81,20 @@ exclude_patterns = [
 html_theme = "pytorch_sphinx_theme2"
 html_title = f"{project} documentation"
 html_short_title = project
+html_logo = "_images/logo/pyHyperRI_logo_text_black.svg"
 html_static_path = ["_static"]
+html_extra_path = ["_images", "_images/logo/favicon.ico"]
 html_css_files = ["custom.css"]
 html_js_files = ["custom.js"]
 pygments_style = "sphinx"
 
 html_theme_options = {
     "pytorch_project": "docs",
-    "logo": {"text": "pyHyperRI"},
+    "logo": {
+        "image_light": "_images/logo/pyHyperRI_logo_text_black.svg",
+        "image_dark": "_images/logo/pyHyperRI_logo_text_white.svg",
+        "text": "",
+    },
     "collapse_navigation": False,
     "display_version": True,
     "show_prev_next": True,
@@ -186,6 +192,9 @@ def _github_path_for_page(pagename, context):
 
 
 def _add_github_source_url(app, pagename, templatename, context, doctree):
+    if pagename in {root_doc, f"{root_doc}.html"}:
+        context["title"] = html_title
+
     notebook_source = f"{pagename}.ipynb"
     notebook_path = ROOT / "docs" / notebook_source
     context["notebook_source"] = notebook_source if notebook_path.exists() else None

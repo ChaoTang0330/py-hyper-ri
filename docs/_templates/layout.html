@@ -1,0 +1,21 @@
+{% extends "!layout.html" %}
+
+{% block extrahead %}
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ pathto('logo/favicon-16x16.png', 1) }}?v=20260608">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ pathto('logo/favicon-32x32.png', 1) }}?v=20260608">
+  <link rel="icon" type="image/png" sizes="48x48" href="{{ pathto('logo/pyHyperRI_logo.png', 1) }}?v=20260608">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ pathto('logo/apple-touch-icon.png', 1) }}?v=20260608">
+  <link rel="shortcut icon" href="{{ pathto('favicon.ico', 1) }}?v=20260608">
+  <link rel="icon" type="image/x-icon" href="{{ pathto('logo/favicon.ico', 1) }}?v=20260608">
+  <link rel="mask-icon" href="{{ pathto('logo/pyHyperRI_logo.svg', 1) }}" color="#020b2d">
+  {{ super() }}
+{% endblock %}
+
+{% block htmltitle %}
+  {% set page_title = title|striptags|trim %}
+  {% if pagename == "index" or page_title == "index.html" %}
+    <title>{{ docstitle|default("pyHyperRI documentation")|striptags|e }}</title>
+  {% else %}
+    <title>{{ page_title|e }}</title>
+  {% endif %}
+{% endblock %}

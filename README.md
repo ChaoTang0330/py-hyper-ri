@@ -1,8 +1,17 @@
-# pyHyperRI
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/_images/logo/pyHyperRI_logo_text_white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/_images/logo/pyHyperRI_logo_text_black.svg">
+    <img src="docs/_images/logo/pyHyperRI_logo_text_black.svg" alt="pyHyperRI" height="96">
+  </picture>
+</p>
 
 [![python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![pytorch](https://img.shields.io/badge/PyTorch-enabled-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](LICENSE)
+[![CI](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/actions/workflows/ci.yml)
+
+<!-- TODO: Add PyPI version, documentation, DOI/Zenodo, and coverage badges once those services are available. -->
 
 pyHyperRI is a PyTorch-based platform for developing, testing, and
 benchmarking radio-interferometric (RI) imaging algorithms. The current package
@@ -114,14 +123,16 @@ pyHyperRI is distributed under the [BSD 3-Clause License](LICENSE).
 ## Dependencies
 
 pyHyperRI builds on several external packages. The full dependency list is declared in
-[`pyproject.toml`](pyproject.toml). Key dependencies and their associated papers include:
+[`pyproject.toml`](pyproject.toml). Main dependencies and their associated references are listed below.
 
 | Package | Reference |
 | --- | --- |
 | [Astropy](https://www.astropy.org/) | Astropy Collaboration et al., [The Astropy Project: Sustaining and Growing a Community-oriented Open-source Project and the Latest Major Release](https://doi.org/10.3847/1538-4357/ac7c74), *The Astrophysical Journal*, 2022. |
 | [casacore](https://casacore.github.io/casacore/) and [python-casacore](https://casacore.github.io/python-casacore/) | van Diepen, [Casacore Table Data System and its use in the MeasurementSet](https://doi.org/10.1016/j.ascom.2015.06.002), *Astronomy and Computing*, 2015. |
 | [FINUFFT](https://finufft.readthedocs.io/) and [cuFINUFFT](https://finufft.readthedocs.io/en/latest/c_gpu.html) | Barnett et al., [A Parallel Nonuniform Fast Fourier Transform Library Based on an Exponential of Semicircle Kernel](https://doi.org/10.1137/18M120885X), *SIAM Journal on Scientific Computing*, 2019; Shih et al., [cuFINUFFT: a load-balanced GPU library for general-purpose nonuniform FFTs](https://doi.org/10.1109/IPDPSW52791.2021.00105), *IPDPSW*, 2021. |
+| [h5py](https://github.com/h5py/h5py) | Andrew Collette and contributors, [h5py](https://github.com/h5py/h5py), BSD 3-Clause licensed software, 2008. |
 | [NumPy](https://numpy.org/) | Harris et al., [Array programming with NumPy](https://doi.org/10.1038/s41586-020-2649-2), *Nature*, 2020. |
+| [onnx2torch](https://github.com/ENOT-AutoDL/onnx2torch) | ENOT developers et al., [onnx2torch](https://github.com/ENOT-AutoDL/onnx2torch), Apache-2.0 licensed software, 2021. |
 | [PyTorch](https://pytorch.org/) | Paszke et al., [PyTorch: An Imperative Style, High-Performance Deep Learning Library](https://papers.neurips.cc/paper/9015-pytorch-an-imperative-style-high-performance-deep-learning-library), NeurIPS 2019. |
 | [PyTorch Wavelet Toolbox](https://pytorch-wavelet-toolbox.readthedocs.io/en/latest/) | Wolter et al., [ptwt - The PyTorch Wavelet Toolbox](https://www.jmlr.org/papers/v25/23-0636.html), *Journal of Machine Learning Research*, 2024. |
 | [scikit-image](https://scikit-image.org/) | van der Walt et al., [scikit-image: image processing in Python](https://doi.org/10.7717/peerj.453), *PeerJ*, 2014. |

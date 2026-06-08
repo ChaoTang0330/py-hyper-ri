@@ -1,8 +1,14 @@
 /* Keep the navigation bar flush with the top of the viewport. */
 html,
 body {
+  --navbar-brand-width: 156px;
   margin-top: 0 !important;
   padding-top: 0 !important;
+}
+
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 .bd-header {
@@ -10,9 +16,81 @@ body {
   margin-top: 0 !important;
 }
 
+@media (min-width: 960px) {
+  .bd-sidebar-primary {
+    top: 0 !important;
+  }
+}
+
 .pst-async-banner-revealer {
   display: none !important;
   height: 0 !important;
+}
+
+.hyri-index-logo-lockup {
+  height: auto;
+  max-width: min(100%, 24rem);
+  width: 100%;
+}
+
+.bd-content h1:has(> .headerlink[href="#pyhyperri"]) {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.hyri-index-logo-title,
+.bd-content h1:has(> .hyri-index-logo-lockup) {
+  line-height: 1;
+  margin: 0 0 1.5rem;
+  text-align: center;
+}
+
+.bd-content h1:has(> .hyri-index-logo-lockup) .headerlink {
+  display: none;
+}
+
+.navbar-header-items__start .navbar-brand.logo,
+.navbar-header-items__mobile-logo .navbar-brand.logo {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 var(--navbar-brand-width);
+  height: var(--pst-header-height);
+  line-height: 1;
+  max-width: none;
+  overflow: visible;
+  text-decoration: none;
+  width: var(--navbar-brand-width);
+}
+
+.bd-header .navbar-header-items {
+  padding-left: 0;
+}
+
+.navbar-header-items__start .navbar-brand.logo .logo__image,
+.navbar-header-items__mobile-logo .navbar-brand.logo .logo__image {
+  flex: 0 0 auto;
+  height: 2.4rem !important;
+  max-height: none !important;
+  max-width: none !important;
+  margin-right: 0 !important;
+  transform: translateY(0.04rem);
+  width: auto !important;
+}
+
+.navbar-header-items__start .navbar-brand.logo .logo__title,
+.navbar-header-items__mobile-logo .navbar-brand.logo .logo__title {
+  display: none;
+}
+
+.bd-header .navbar-brand:hover,
+.bd-header .navbar-brand:focus {
+  text-decoration: none;
 }
 
 /* Keep API parameter lists compact after moving type hints to signatures. */
@@ -80,7 +158,7 @@ p.rubric,
 
 @media (min-width: 960px) {
   body:has(.bd-sidebar-secondary) .bd-sidebar-primary {
-    top: var(--header-height-desktop) !important;
+    top: 0 !important;
   }
 }
 
@@ -94,9 +172,7 @@ p.rubric,
 .bd-sidebar-primary .bd-links__title a:hover,
 .bd-sidebar-primary .bd-links__title a:focus {
   color: inherit;
-  text-decoration: underline;
-  text-decoration-thickness: max(3px, 0.1875rem, 0.12em);
-  text-underline-offset: 0.1578em;
+  text-decoration: none;
 }
 
 .github-source-link {
@@ -113,6 +189,27 @@ p.rubric,
 .hyri-reconstruction-log .cell_output {
   max-height: 32rem;
   overflow-y: auto;
+}
+
+.api-structure-plot-wrapper {
+  margin: 1.25rem 0 2rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.api-structure-plot {
+  aspect-ratio: 1332.5439 / 794.61066;
+  display: block;
+  height: auto;
+  min-width: 840px;
+  width: 100%;
+}
+
+@media (min-width: 960px) {
+  .api-structure-plot-wrapper {
+    margin-left: -1.5rem;
+    margin-right: -1.5rem;
+  }
 }
 
 .bd-sidebar-secondary .hyri-sidebar-link,
@@ -136,14 +233,14 @@ p.rubric,
   background-color: currentColor;
   flex: 0 0 auto;
   height: 1rem;
-  mask-image: url("jupyter-icon.svg");
+  mask-image: url("../logo/jupyter-icon.svg");
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
   transform: scale(1.3);
   transform-origin: center;
   width: 1rem;
-  -webkit-mask-image: url("jupyter-icon.svg");
+  -webkit-mask-image: url("../logo/jupyter-icon.svg");
   -webkit-mask-position: center;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-size: contain;
