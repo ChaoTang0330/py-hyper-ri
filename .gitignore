@@ -75,14 +75,12 @@ docs/api/generated/*
 .torchinductor_cache/
 
 # Tracked data/configuration exceptions
-!airi_denoisers/shelf*.csv
-!airi_denoisers/*shelf/*.onnx
+!archive/
+!config/*.json
 !data/3c353_sim_vla_meas_hs/*.mat
 !data/3c353_sim_vla_meas_hs/*.fits
-!config/*.json
-!src/hyri/config/*.json
-!docs/_images/background/*.png
-!requirements.txt
+!docs/_images/*/*.png
 !docs/tutorials/*.ipynb
-!tutorial_airi_python.ipynb
-!tutorial_usara_python.ipynb
+!src/hyri/airi_denoisers/shelf*.csv
+!src/hyri/airi_denoisers/*shelf/*.onnx
+!src/hyri/config/*.json
