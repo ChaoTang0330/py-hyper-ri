@@ -31,16 +31,16 @@ supported by the PyTorch ecosystem.
 
 If you use pyHyperRI in your research, please cite this software repository
 using the metadata in
-[`CITATION.cff`](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/blob/main/CITATION.cff).
+[`CITATION.cff`](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/CITATION.cff).
 If you use specific methods implemented in the package, please also cite the
 relevant method papers listed in {ref}`Algorithms <algorithms>`.
 
 For redistributed or modified versions, please keep
-[`CITATION.cff`](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/blob/main/CITATION.cff)
+[`CITATION.cff`](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/CITATION.cff)
 with the software, so the recommended citation remains available.
 
 pyHyperRI is distributed under the
-[BSD 3-Clause License](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/blob/main/LICENSE).
+[BSD 3-Clause License](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/LICENSE).
 Redistributed source or binary forms, with or without modification, must retain
 or reproduce the copyright notice, license conditions, and disclaimer as
 required by the license.

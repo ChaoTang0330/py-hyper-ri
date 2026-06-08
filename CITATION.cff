@@ -3,8 +3,8 @@ message: "If you use pyHyperRI, please cite this software repository. If you use
 title: "pyHyperRI: Python package for hyperspectral radio astronomical imaging"
 version: 1.0.0
 license: BSD-3-Clause
-repository-code: "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
-url: "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
+repository-code: "https://github.com/ChaoTang0330/py-hyper-ri"
+url: "https://github.com/ChaoTang0330/py-hyper-ri"
 keywords:
   - "radio interferometry"
   - "hyperspectral imaging"

@@ -107,14 +107,14 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs",
+            "url": "https://github.com/ChaoTang0330/py-hyper-ri",
             "icon": "fa-brands fa-github",
         },
         {
             "name": "PyPI",
             # TODO: Replace this with the package's PyPI project URL
             # once it is available.
-            "url": "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs",
+            "url": "https://github.com/ChaoTang0330/py-hyper-ri",
             "icon": "fa-brands fa-python",
         },
     ],
@@ -152,7 +152,7 @@ external_module_links = {
     "torchkbnufft": "https://torchkbnufft.readthedocs.io/en/stable/",
 }
 
-github_repo_url = "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
+github_repo_url = "https://github.com/ChaoTang0330/py-hyper-ri"
 github_source_base = f"{github_repo_url}/blob/main/"
 github_tree_base = f"{github_repo_url}/tree/main/"
 

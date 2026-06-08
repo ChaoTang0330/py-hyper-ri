@@ -28,9 +28,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
-Source = "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs"
-Tracker = "https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/issues"
+Homepage = "https://github.com/ChaoTang0330/py-hyper-ri"
+Source = "https://github.com/ChaoTang0330/py-hyper-ri"
+Tracker = "https://github.com/ChaoTang0330/py-hyper-ri/issues"
 
 [project.optional-dependencies]
 cuda = [

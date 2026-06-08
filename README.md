@@ -9,7 +9,7 @@
 [![python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![pytorch](https://img.shields.io/badge/PyTorch-enabled-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](LICENSE)
-[![CI](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaoTang0330/small-scale-ri-imaging-hs/actions/workflows/ci.yml)
+[![CI](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml)
 
 <!-- TODO: Add PyPI version, documentation, DOI/Zenodo, and coverage badges once those services are available. -->
 
