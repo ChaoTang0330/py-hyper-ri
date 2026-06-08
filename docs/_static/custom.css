@@ -2,8 +2,37 @@
 html,
 body {
   --navbar-brand-width: 156px;
+  --navbar-logo-height: 2.4rem;
   margin-top: 0 !important;
   padding-top: 0 !important;
+}
+
+html[data-theme="light"] {
+  --pst-color-primary: #2563eb;
+  --pst-color-secondary: #2563eb;
+  --pst-color-link: #2563eb;
+  --pst-color-link-hover: #1d4ed8;
+  --pst-color-inline-code-links: #2563eb;
+  --pst-color-table-row-hover-bg: #dbeafe;
+  --bs-emphasis-color: #2563eb;
+  --bs-emphasis-color-rgb: 37, 99, 235;
+  --bs-link-hover-color: #1d4ed8;
+  --hyri-note-border: #16a34a;
+  --hyri-note-title-bg: #dcfce7;
+}
+
+html[data-theme="dark"] {
+  --pst-color-primary: #60a5fa;
+  --pst-color-secondary: #60a5fa;
+  --pst-color-link: #60a5fa;
+  --pst-color-link-hover: #93c5fd;
+  --pst-color-inline-code-links: #60a5fa;
+  --pst-color-table-row-hover-bg: rgba(37, 99, 235, 0.22);
+  --bs-emphasis-color: #60a5fa;
+  --bs-emphasis-color-rgb: 96, 165, 250;
+  --bs-link-hover-color: #93c5fd;
+  --hyri-note-border: #4ade80;
+  --hyri-note-title-bg: rgba(34, 197, 94, 0.18);
 }
 
 html {
@@ -31,6 +60,15 @@ html {
   height: auto;
   max-width: min(100%, 24rem);
   width: 100%;
+}
+
+html[data-theme="light"] .hyri-index-logo-lockup.only-dark,
+html[data-theme="dark"] .hyri-index-logo-lockup.only-light {
+  display: none;
+}
+
+html[data-theme="dark"] .hyri-index-logo-lockup.only-dark {
+  display: inline-block;
 }
 
 .bd-content h1:has(> .headerlink[href="#pyhyperri"]) {
@@ -75,7 +113,8 @@ html {
 .navbar-header-items__start .navbar-brand.logo .logo__image,
 .navbar-header-items__mobile-logo .navbar-brand.logo .logo__image {
   flex: 0 0 auto;
-  height: 2.4rem !important;
+  display: block;
+  height: var(--navbar-logo-height) !important;
   max-height: none !important;
   max-width: none !important;
   margin-right: 0 !important;
@@ -93,6 +132,18 @@ html {
   text-decoration: none;
 }
 
+.bd-header .theme-switch-button:hover,
+.bd-header .theme-switch-button:focus {
+  background-color: transparent;
+  box-shadow: 0 0 0 0.1875rem var(--pst-color-link-hover);
+  color: var(--pst-color-link-hover);
+}
+
+.tooltip {
+  --bs-tooltip-bg: var(--pst-color-primary);
+  --bs-tooltip-color: #ffffff;
+}
+
 /* Keep API parameter lists compact after moving type hints to signatures. */
 .field-list.simple ul.simple {
   margin-bottom: 0;
@@ -104,6 +155,10 @@ html {
 
 .field-list p strong {
   margin-right: 0.35rem;
+}
+
+.bd-content table tbody tr:hover {
+  background-color: var(--pst-color-table-row-hover-bg);
 }
 
 p.rubric,
@@ -154,12 +209,6 @@ p.rubric,
 
 .sphinx-theme-versions {
   margin-bottom: 0;
-}
-
-@media (min-width: 960px) {
-  body:has(.bd-sidebar-secondary) .bd-sidebar-primary {
-    top: 0 !important;
-  }
 }
 
 .bd-sidebar-primary .bd-links__title a,
@@ -257,15 +306,22 @@ p.rubric,
   text-decoration: underline;
 }
 
-/* Make note admonitions visually close to the PyTorch documentation style. */
-.admonition.note,
-.admonition-notes {
-  border-left: 4px solid var(--pst-color-info);
+/* Keep note bodies neutral while giving the title row a project accent. */
+.bd-content .admonition.note,
+.bd-content .admonition-notes {
+  border-left: 4px solid var(--hyri-note-border);
   border-radius: 4px;
   box-shadow: none;
 }
 
-.admonition.note .admonition-title,
-.admonition-notes .admonition-title {
+.bd-content .admonition.note > .admonition-title,
+.bd-content .admonition-notes > .admonition-title {
+  background-color: var(--hyri-note-title-bg);
+  color: var(--pst-color-text-base);
   font-weight: 600;
+}
+
+.bd-content .admonition.note > .admonition-title::after,
+.bd-content .admonition-notes > .admonition-title::after {
+  color: var(--hyri-note-border) !important;
 }

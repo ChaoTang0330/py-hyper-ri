@@ -6,7 +6,8 @@ title: pyHyperRI
 
 ```{raw} html
 <h1 class="hyri-index-logo-title">
-  <img src="logo/pyHyperRI_logo_text_black.svg" alt="pyHyperRI" class="hyri-index-logo-lockup">
+  <img src="logo/pyHyperRI_logo_text_black.svg" alt="pyHyperRI" class="hyri-index-logo-lockup only-light">
+  <img src="logo/pyHyperRI_logo_text_white.svg" alt="pyHyperRI" class="hyri-index-logo-lockup only-dark">
 </h1>
 ```
 
