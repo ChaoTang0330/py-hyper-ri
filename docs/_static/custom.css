@@ -19,6 +19,8 @@ html[data-theme="light"] {
   --bs-link-hover-color: #1d4ed8;
   --hyri-note-border: #16a34a;
   --hyri-note-title-bg: #dcfce7;
+  --hyri-skip-link-bg: #2563eb;
+  --hyri-skip-link-text: #ffffff;
 }
 
 html[data-theme="dark"] {
@@ -33,6 +35,8 @@ html[data-theme="dark"] {
   --bs-link-hover-color: #93c5fd;
   --hyri-note-border: #4ade80;
   --hyri-note-title-bg: rgba(34, 197, 94, 0.18);
+  --hyri-skip-link-bg: #1d4ed8;
+  --hyri-skip-link-text: #ffffff;
 }
 
 html {
@@ -142,6 +146,20 @@ html[data-theme="dark"] .hyri-index-logo-lockup.only-dark {
 .tooltip {
   --bs-tooltip-bg: var(--pst-color-primary);
   --bs-tooltip-color: #ffffff;
+}
+
+.skip-link {
+  background-color: var(--hyri-skip-link-bg);
+  border-bottom-color: var(--hyri-skip-link-bg);
+}
+
+.skip-link a,
+.skip-link a:visited {
+  color: var(--hyri-skip-link-text) !important;
+}
+
+.skip-link a:focus-visible {
+  outline-color: var(--hyri-skip-link-text);
 }
 
 /* Keep API parameter lists compact after moving type hints to signatures. */
@@ -323,5 +341,6 @@ p.rubric,
 
 .bd-content .admonition.note > .admonition-title::after,
 .bd-content .admonition-notes > .admonition-title::after {
+  content: var(--pst-icon-admonition-note) !important;
   color: var(--hyri-note-border) !important;
 }

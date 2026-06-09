@@ -2,16 +2,173 @@
 
 import numpy as np
 import pytest
+from scipy.io import loadmat
 
 import hyri.interface.ms2mat as ms2mat_module
 from hyri.interface.ms2mat import (
-    _imaging_weight_multiplier,
     _print_dry_run_summary,
+    _read_single_channel,
     _sorted_channels,
     _stokes_i_and_weight,
+    _write_channel_data,
     convert_ms_to_mat,
     parse_ms2mat_arguments,
 )
+
+
+class FakeSelectedMsTable:
+    """Small in-memory table exposing the casacore methods used by the reader."""
+
+    def __init__(self) -> None:
+        self.columns = {
+            "DATA": np.array(
+                [
+                    [[100.0 + 0.0j, 100.0 + 0.0j], [2.0 + 0.0j, 6.0 + 0.0j]],
+                    [[100.0 + 0.0j, 100.0 + 0.0j], [4.0 + 0.0j, 8.0 + 0.0j]],
+                    [[100.0 + 0.0j, 100.0 + 0.0j], [1.0 + 0.0j, 3.0 + 0.0j]],
+                ]
+            ),
+            "FLAG": np.zeros((3, 2, 2), dtype=bool),
+            "WEIGHT_SPECTRUM": np.array(
+                [
+                    [[1.0, 1.0], [1.0, 3.0]],
+                    [[1.0, 1.0], [2.0, 2.0]],
+                    [[1.0, 1.0], [4.0, 4.0]],
+                ]
+            ),
+            "IMAGING_WEIGHT": np.array(
+                [
+                    [1.0, 9.0],
+                    [1.0, 16.0],
+                    [1.0, 25.0],
+                ]
+            ),
+        }
+
+    def getcell(self, column: str, row: int) -> np.ndarray:
+        return self.columns[column][row]
+
+    def getcol(
+        self,
+        column: str,
+        startrow: int = 0,
+        nrow: int = -1,
+        rowincr: int = 1,
+    ) -> np.ndarray:
+        del rowincr
+        stop = None if nrow < 0 else startrow + nrow
+        return self.columns[column][startrow:stop]
+
+    def getcolslice(
+        self,
+        column: str,
+        blc: list[int],
+        trc: list[int],
+        startrow: int = 0,
+        nrow: int = -1,
+        rowincr: int = 1,
+    ) -> np.ndarray:
+        del rowincr
+        values = self.getcol(column, startrow=startrow, nrow=nrow)
+        if values.ndim == 3:
+            return values[:, blc[0] : trc[0] + 1, blc[1] : trc[1] + 1]
+        if values.ndim == 2:
+            return values[:, blc[0] : trc[0] + 1]
+        raise ValueError(f"Unsupported fake column shape {values.shape}.")
+
+
+class FakeCasaTable:
+    """Small casacore-like table for end-to-end conversion tests."""
+
+    def __init__(self, columns: dict[str, np.ndarray]) -> None:
+        self.columns = columns
+
+    def close(self) -> None:
+        pass
+
+    def colnames(self) -> list[str]:
+        return list(self.columns)
+
+    def nrows(self) -> int:
+        first_column = next(iter(self.columns.values()))
+        return int(first_column.shape[0])
+
+    def getcell(self, column: str, row: int) -> np.ndarray:
+        return self.columns[column][row]
+
+    def getcol(
+        self,
+        column: str,
+        startrow: int = 0,
+        nrow: int = -1,
+        rowincr: int = 1,
+    ) -> np.ndarray:
+        del rowincr
+        stop = None if nrow < 0 else startrow + nrow
+        return self.columns[column][startrow:stop]
+
+    def getcolslice(
+        self,
+        column: str,
+        blc: list[int],
+        trc: list[int],
+        startrow: int = 0,
+        nrow: int = -1,
+        rowincr: int = 1,
+    ) -> np.ndarray:
+        del rowincr
+        values = self.getcol(column, startrow=startrow, nrow=nrow)
+        return values[:, blc[0] : trc[0] + 1, blc[1] : trc[1] + 1]
+
+    def query(self, expression: str) -> "FakeCasaTable":
+        mask = np.ones(self.nrows(), dtype=bool)
+        for clause in expression.split("&&"):
+            name, value = clause.strip().split("==")
+            mask &= self.columns[name.strip()] == int(value.strip())
+        return FakeCasaTable(
+            {name: values[mask] for name, values in self.columns.items()}
+        )
+
+
+def fake_casa_table_factory():
+    """Build a casacore table factory with interleaved DATA_DESC_ID rows."""
+    main_columns = {
+        "FIELD_ID": np.array([7, 7, 7, 7, 8]),
+        "DATA_DESC_ID": np.array([0, 1, 0, 1, 0]),
+        "UVW": np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [4.0, 0.0, 0.0],
+                [5.0, 0.0, 0.0],
+            ]
+        ),
+        "FLAG_ROW": np.array([False, False, True, False, False]),
+        "DATA": np.array(
+            [
+                [[2.0 + 0.0j, 6.0 + 0.0j]],
+                [[4.0 + 0.0j, 8.0 + 0.0j]],
+                [[10.0 + 0.0j, 14.0 + 0.0j]],
+                [[6.0 + 0.0j, 10.0 + 0.0j]],
+                [[100.0 + 0.0j, 100.0 + 0.0j]],
+            ]
+        ),
+        "FLAG": np.zeros((5, 1, 2), dtype=bool),
+        "WEIGHT_SPECTRUM": np.ones((5, 1, 2), dtype=np.float64),
+    }
+    dd_columns = {"SPECTRAL_WINDOW_ID": np.array([0, 1])}
+    spw_columns = {"CHAN_FREQ": np.array([[10.0], [20.0]], dtype=np.float64)}
+
+    def factory(path: str, readonly: bool = True, ack: bool = False) -> FakeCasaTable:
+        del readonly, ack
+        if path.endswith("DATA_DESCRIPTION"):
+            return FakeCasaTable(dd_columns)
+        if path.endswith("SPECTRAL_WINDOW"):
+            return FakeCasaTable(spw_columns)
+        return FakeCasaTable(main_columns)
+
+    return factory
 
 
 def test_sorted_channels_orders_low_to_high_and_slices_one_based() -> None:
@@ -136,26 +293,150 @@ def test_stokes_i_and_weight_flags_nonpositive_weight() -> None:
     assert weight[0] == 0.0
 
 
-def test_imaging_weight_multiplier_selects_frequency_without_corr_sum() -> None:
-    """IMAGING_WEIGHT rows should select the channel value directly."""
-    weight = _imaging_weight_multiplier(np.array([4.0, 9.0]), channel_id=1)
+def test_read_single_channel_preserves_selected_row_order() -> None:
+    """Vectorized channel reads should align arrays to the selected MS rows."""
+    channel = ms2mat_module.MsChannel(
+        output_index=5,
+        frequency_hz=230.0,
+        members=(ms2mat_module.MsChannelMember(spectral_window_id=0, channel_id=1),),
+    )
+    member = channel.members[0]
 
-    assert weight == pytest.approx(3.0)
-
-
-def test_imaging_weight_multiplier_averages_spectrum_edge_correlations() -> None:
-    """IMAGING_WEIGHT_SPECTRUM should not sum first/last correlations."""
-    weight = _imaging_weight_multiplier(
-        np.array(
-            [
-                [100.0, 100.0, 100.0],
-                [4.0, 100.0, 16.0],
-            ]
-        ),
-        channel_id=1,
+    data_i, weights_nat, flag, weights_img = _read_single_channel(
+        tab=FakeSelectedMsTable(),
+        data_column_name="DATA",
+        natural_weight_column="WEIGHT_SPECTRUM",
+        imaging_weight_column="IMAGING_WEIGHT",
+        channel=channel,
+        member=member,
+        channel_count=2,
+        base_flag=np.array([False, True, False]),
+        flag_zero_data=True,
+        write_imaging_weight=True,
     )
 
-    assert weight == pytest.approx(np.sqrt(10.0))
+    assert data_i == pytest.approx(np.array([5.0 + 0.0j, 6.0 + 0.0j, 2.0 + 0.0j]))
+    assert weights_nat == pytest.approx(np.array([2.0, 2.0, np.sqrt(8.0)]))
+    assert flag.tolist() == [False, True, False]
+    assert weights_img is not None
+    assert weights_img == pytest.approx(np.array([3.0, 4.0, 5.0]))
+
+
+def test_read_single_channel_matches_cell_weight_shape_handling() -> None:
+    """WEIGHT is channel-independent while IMAGING_WEIGHT follows WSClean."""
+    table = FakeSelectedMsTable()
+    table.columns["WEIGHT"] = np.array(
+        [
+            [1.0, 3.0],
+            [2.0, 2.0],
+            [4.0, 4.0],
+        ]
+    )
+    table.columns["IMAGING_WEIGHT"] = np.array(
+        [
+            [1.0, 9.0],
+            [1.0, 16.0],
+            [1.0, 25.0],
+        ]
+    )
+    channel = ms2mat_module.MsChannel(
+        output_index=5,
+        frequency_hz=230.0,
+        members=(ms2mat_module.MsChannelMember(spectral_window_id=0, channel_id=1),),
+    )
+
+    _, weights_nat, _, weights_img = _read_single_channel(
+        tab=table,
+        data_column_name="DATA",
+        natural_weight_column="WEIGHT",
+        imaging_weight_column="IMAGING_WEIGHT",
+        channel=channel,
+        member=channel.members[0],
+        channel_count=2,
+        base_flag=np.array([False, False, False]),
+        flag_zero_data=True,
+        write_imaging_weight=True,
+    )
+
+    assert weights_nat == pytest.approx(np.array([2.0, 2.0, np.sqrt(8.0)]))
+    assert weights_img is not None
+    assert weights_img == pytest.approx(np.array([3.0, 4.0, 5.0]))
+
+
+def test_write_channel_data_preserves_loader_contract(tmp_path) -> None:
+    """Channel files should store full flags and unflagged data arrays."""
+    channel = ms2mat_module.MsChannel(
+        output_index=2,
+        frequency_hz=230.0,
+        members=(ms2mat_module.MsChannelMember(spectral_window_id=0, channel_id=1),),
+    )
+    flag = np.array([False, True, False])
+
+    _write_channel_data(
+        tmp_path,
+        channel,
+        data_i=np.array([1.0 + 0.0j, 2.0 + 0.0j]),
+        weights_nat=np.array([3.0, 4.0]),
+        flag=flag,
+        weights_img=np.array([5.0, 6.0]),
+    )
+
+    written = loadmat(tmp_path / "data_ch_2.mat")
+    assert written["flag"].size == flag.size
+    assert written["data_I"].size == np.count_nonzero(~flag)
+    assert written["weightsNat"].size == np.count_nonzero(~flag)
+    assert written["weightsImg"].size == np.count_nonzero(~flag)
+
+
+def test_write_channel_data_rejects_loader_contract_mismatch(tmp_path) -> None:
+    """Mismatched data/flag lengths should fail before a file is written."""
+    channel = ms2mat_module.MsChannel(
+        output_index=2,
+        frequency_hz=230.0,
+        members=(ms2mat_module.MsChannelMember(spectral_window_id=0, channel_id=1),),
+    )
+
+    with pytest.raises(ValueError, match="unflagged UVW"):
+        _write_channel_data(
+            tmp_path,
+            channel,
+            data_i=np.array([1.0 + 0.0j]),
+            weights_nat=np.array([3.0]),
+            flag=np.array([False, True, False]),
+        )
+
+
+def test_convert_ms_to_mat_maps_data_desc_id_to_spw(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FIELD_ID selects the source; DATA_DESC_ID selects rows for each SPW."""
+    monkeypatch.setattr(ms2mat_module, "casa_table", fake_casa_table_factory())
+    ms_path = tmp_path / "target.ms"
+    (ms_path / "DATA_DESCRIPTION").mkdir(parents=True)
+    (ms_path / "SPECTRAL_WINDOW").mkdir()
+
+    convert_ms_to_mat(
+        ms_path,
+        output_path=tmp_path,
+        src_name="converted",
+        src_id=7,
+        data_column="DATA",
+        write_imaging_weight=False,
+    )
+
+    out_dir = tmp_path / "converted"
+    ms_specs = loadmat(out_dir / "msSpecs.mat")
+    ch_1 = loadmat(out_dir / "data_ch_1.mat")
+    ch_2 = loadmat(out_dir / "data_ch_2.mat")
+
+    assert ms_specs["uvw"].shape[0] == 4
+    assert ch_1["flag"].size == 4
+    assert ch_2["flag"].size == 4
+    assert ch_1["flag"].astype(bool).flatten().tolist() == [False, True, True, True]
+    assert ch_2["flag"].astype(bool).flatten().tolist() == [True, False, True, False]
+    assert ch_1["data_I"].flatten() == pytest.approx(np.array([4.0 + 0.0j]))
+    assert ch_2["data_I"].flatten() == pytest.approx(np.array([6.0 + 0.0j, 8.0 + 0.0j]))
 
 
 def test_parse_ms2mat_arguments_defaults() -> None:

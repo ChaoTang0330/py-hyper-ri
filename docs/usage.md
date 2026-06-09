@@ -152,6 +152,7 @@ data/target/
   ...
 ```
 
+The `--src_id` option selects the Measurement Set `FIELD_ID`. The default value is `0`.
 If `--src_name` is omitted, the output folder is derived from the MS filename
 with a trailing `.ms` suffix removed. Channels from all spectral windows are
 flattened, grouped by shared observation frequency, and sorted from low to
