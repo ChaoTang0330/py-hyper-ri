@@ -336,15 +336,6 @@ def set_imaging_params_ri(
         if param_optimiser["algorithm"] == "hyperairi":
             # Adaptive spectral index update controls.
             param_optimiser["spec_update"] = param_general.get("spec_update", True)
-            if (
-                param_general.get("spec_max_update_count", None)
-                and param_general["spec_max_update_count"] >= 1
-            ):
-                param_optimiser["spec_max_update_count"] = int(
-                    param_general["spec_max_update_count"]
-                )
-            else:
-                param_optimiser["spec_max_update_count"] = 50
             param_optimiser["spec_idx_init"] = param_general.get(
                 "spec_idx_init", "zero"
             )
@@ -363,6 +354,18 @@ def set_imaging_params_ri(
                 )
             else:
                 param_optimiser["spec_max_update_interval"] = 60
+            if (
+                param_general.get("spec_max_update_count", None)
+                and param_general["spec_max_update_count"] >= 1
+            ):
+                param_optimiser["spec_max_update_count"] = int(
+                    param_general["spec_max_update_count"]
+                )
+            else:
+                param_optimiser["spec_max_update_count"] = int(
+                    param_optimiser["im_max_itr"]
+                    / param_optimiser["spec_max_update_interval"]
+                )
             if (
                 param_general.get("spec_update_tol_max", None)
                 and param_general["spec_update_tol_max"] > 0
