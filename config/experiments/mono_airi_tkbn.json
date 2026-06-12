@@ -1,0 +1,67 @@
+[
+    {
+        "__comment": "Main",
+        "main": {
+            "src_name": [],
+            "data_file": [],
+            "result_path": [],
+            "algorithm": "airi",
+            "im_dim_x": 512,
+            "im_dim_y": 512,
+            "im_pixel_size": [],
+            "superresolution": 1.0,
+            "groundtruth": [],
+            "run_id": []
+        }
+    },
+    {
+        "__comment": "General",
+        "flag": {
+            "flag_comment_1": "flags",
+            "flag_imaging": true,
+            "flag_data_weighting": false,
+            "verbose": true
+        },
+        "weighting": {
+            "weighting_comment_1": "weighting",
+            "weight_load": true,
+            "weight_type": "briggs",
+            "weight_robustness": 0,
+            "weight_gridsize": 2
+        },
+        "computing": {
+            "computing_comment_1": "computing resources",
+            "meas_device": "cuda",
+            "meas_dtype": "double",
+            "regulariser_device": "cuda",
+            "regulariser_dtype": "single"
+        },
+        "nufft": {
+            "nufft_comment_1": "nufft settings",
+            "nufft_package": "tkbnufft",
+            "nufft_mode": []
+        }
+    },
+    {
+        "__comment": "Denoisers",
+        "airi": {
+            "denoiser_comment_1": "airi params",
+            "heu_noise_scale": 1.0,
+            "dnn_shelf_path": "shelf_airi_oaid.csv",
+            "im_peak_est": [],
+            "dnn_adaptive_peak": true,
+            "dnn_apply_transform": true
+        },
+        "airi_default": {
+            "denoiser_comment_2": "airi default params",
+            "approx_meas_op": false,
+            "im_min_itr": 100,
+            "im_max_itr": 6000,
+            "im_var_tol": 5e-5,
+            "itr_save": -1,
+            "dnn_adaptive_peak_tol_max": 1e-1,
+            "dnn_adaptive_peak_tol_min": 1e-3,
+            "dnn_adaptive_peak_tol_step": 0.1
+        }
+    }
+]
