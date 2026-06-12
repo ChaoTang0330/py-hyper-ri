@@ -129,4 +129,4 @@ def run_ms2mat() -> None:
 
 
 if __name__ == "__main__":
-    run_imager()
+    run_hyri()
