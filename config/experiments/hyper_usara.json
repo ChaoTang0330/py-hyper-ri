@@ -39,7 +39,7 @@
             "meas_device": "cuda",
             "meas_dtype": "double",
             "regulariser_device": "cuda",
-            "regulariser_dtype": "single",
+            "regulariser_dtype": "double",
             "dist_backend": "nccl",
             "dist_init_method": "env://"
         },
