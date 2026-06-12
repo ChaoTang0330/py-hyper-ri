@@ -126,7 +126,3 @@ def run_ms2mat() -> None:
     from .interface.ms2mat import ms2mat
 
     ms2mat()
-
-
-if __name__ == "__main__":
-    run_hyri()
