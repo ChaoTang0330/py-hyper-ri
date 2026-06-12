@@ -99,6 +99,7 @@ class Optimiser(ABC):
         self._file_prefix = file_prefix
         self._rank_ch_num = len(meas)
         self._rank_ch_start = rank_ch_start
+        self._spec_idx_prec = 0
 
         # Allocate shared image-domain buffers for all optimiser variants.
         self._meas_bp = torch.zeros(

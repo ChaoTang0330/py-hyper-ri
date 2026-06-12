@@ -196,6 +196,12 @@ class FBAIRI(ForwardBackward):
         # Estimate heuristic regularisation levels for local channels.
         self._calculate_channel_wise_heuristic()
 
+        # Cache the threshold used by spectral-index estimation in finalisation.
+        self._spec_idx_prec = self._heuristic.min()
+        if self._is_distributed:
+            dist.all_reduce(self._spec_idx_prec, op=dist.ReduceOp.MIN)
+        self._spec_idx_prec = self._spec_idx_prec.item()
+
         # Initialise the AIRI denoiser and cache its supported peak range.
         self._peak_val_range = self._regulariser.update(
             self._heuristic, self._prev_peak_val
