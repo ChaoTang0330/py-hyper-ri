@@ -132,11 +132,13 @@ def print_dict(
         print(" " * indentation + f"{k}: {v}", flush=flush)
 
 
-def verbose_print(args: str, verbose: bool = True) -> None:
+def verbose_print(args: str, verbose: bool = True, end="\n") -> None:
     """Print a message only when verbose mode is enabled.
 
     Args:
         args (str): Message text to print.
+        end (str, optional): String to append after the message.
+            Default: '\n'.
         verbose (bool, optional): If ``True``, print ``args`` to stdout.
             Default: True.
 
@@ -144,7 +146,7 @@ def verbose_print(args: str, verbose: bool = True) -> None:
         None: This function does not return a value.
     """
     if verbose:
-        print(args, flush=True)
+        print(args, flush=True, end=end)
 
 
 def load_mat_to_np(file_name: str) -> dict[str, Any]:

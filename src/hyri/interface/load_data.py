@@ -248,8 +248,9 @@ def load_data_to_tensor(
         f"INFO: rank {rank} loading physical channel "
         f"{rank_ch_start + 1} to {rank_ch_last}, "
         f"corresponding to effective channel "
-        f"{rank_eff_ch_start + 1} to {rank_eff_ch_last}.",
+        f"{rank_eff_ch_start + 1} to {rank_eff_ch_last}.\n",
         verbose,
+        end="",
     )
     if is_distributed:
         dist.barrier()
@@ -587,13 +588,14 @@ def load_data_to_tensor(
 
     if is_distributed:
         dist.barrier()
+    log_info = ""
     for ch in range(rank_eff_ch_start, rank_eff_ch_last):
-        verbose_print(
+        log_info += (
             f"INFO: effective channel {ch + 1} loaded "
             f"{data['u'][ch - rank_eff_ch_start].shape[-1]} uv points, "
-            f"frequency {data['freqs'][ch]:#.4g} Hz.",
-            verbose,
+            f"frequency {data['freqs'][ch]:#.4g} Hz.\n"
         )
+    verbose_print(log_info, verbose, end="")
 
     # Freeze list containers as tuples.
     data["u"] = tuple(data["u"])
