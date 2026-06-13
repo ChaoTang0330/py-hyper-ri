@@ -338,6 +338,8 @@ def parsing_parameters(
     Raises:
         NotImplementedError: If the selected algorithm is not supported by the
         parameter-routing logic.
+        FileNotFoundError: If the specified configuration file does not exist.
+        ValueError: If the required data file parameter is missing or does not exist.
 
     Note:
         Command-line inputs have the highest priority. Algorithm-specific
@@ -400,6 +402,13 @@ def parsing_parameters(
         for k, v in dict_input_param.items():
             if k in param and v is not None:
                 param[k] = v
+
+    # Check if data file is provided and exists.
+    data_file = param.get("data_file")
+    if not data_file:
+        raise ValueError("Data file not specified.")
+    if not os.path.exists(data_file):
+        raise FileNotFoundError(f"Data file not found: {data_file}")
 
     # Log if the default config file is used.
     if param.get("verbose", True) and use_default:
