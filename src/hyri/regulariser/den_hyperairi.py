@@ -368,6 +368,9 @@ class DenHyperAIRI(Regulariser):
             peak_min = peak_min.view(1, -1, 1, 1)
             peak_max = peak_max.view(1, -1, 1, 1)
 
+        if self._is_dist:
+            dist.barrier()
+
         # Update the spectral-correction weights based on the input
         # spectral-index map and local frequency ratios.
         if spec_idx is not None:
