@@ -235,8 +235,9 @@ class FBSARA(ForwardBackward):
                 f"INFO: channel {self._rank_ch_start + 1} - "
                 f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"regularization parameter (lambda): "
-                f"[{', '.join(f'{val:.4e}' for val in reg_param_list)}]",
+                f"[{', '.join(f'{val:.4e}' for val in reg_param_list)}]\n",
                 flush=True,
+                end="",
             )
             if self._is_distributed:
                 dist.barrier()
@@ -247,8 +248,9 @@ class FBSARA(ForwardBackward):
                 f"INFO: channel {self._rank_ch_start + 1} - "
                 f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"heuristic soft thresholding level (gamma x lambda): "
-                f"[{', '.join(f'{val:.4e}' for val in sfth_level_list)}]",
+                f"[{', '.join(f'{val:.4e}' for val in sfth_level_list)}]\n",
                 flush=True,
+                end="",
             )
             if self._is_distributed:
                 dist.barrier()
@@ -259,8 +261,9 @@ class FBSARA(ForwardBackward):
                 f"INFO: channel {self._rank_ch_start + 1} - "
                 f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"estimated noise floor level in wavelet coefficients: "
-                f"[{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]",
+                f"[{', '.join(f'{val:.4e}' for val in wl_noise_floor_list)}]\n",
                 flush=True,
+                end="",
             )
             if self._is_distributed:
                 dist.barrier()

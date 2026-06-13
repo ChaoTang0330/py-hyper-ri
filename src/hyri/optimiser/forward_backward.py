@@ -296,8 +296,9 @@ class ForwardBackward(Optimiser):
                 f"{self._rank_ch_start + self._rank_ch_num}, "
                 f"op norm [{', '.join(f'{val:.4e}' for val in op_norm_ch_list)}], "
                 f"heuristic noise level "
-                f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]\n",
                 flush=True,
+                end="",
             )
 
         heu_corr_factor = torch.sqrt(
@@ -328,8 +329,9 @@ class ForwardBackward(Optimiser):
                     f"heuristic noise level after correction: "
                     f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}], "
                     f"correction factor "
-                    f"[{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]",
+                    f"[{', '.join(f'{val:.4e}' for val in heu_corr_factor_list)}]\n",
                     flush=True,
+                    end="",
                 )
         if not np.isclose(self._heu_noise_scale, 1.0):
             self._heuristic *= self._heu_noise_scale
@@ -351,6 +353,7 @@ class ForwardBackward(Optimiser):
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
                     f"heuristic noise level after scaling: "
-                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]",
+                    f"[{', '.join(f'{val:.4e}' for val in heuristic_list)}]\n",
                     flush=True,
+                    end="",
                 )

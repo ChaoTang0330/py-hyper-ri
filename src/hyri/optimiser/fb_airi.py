@@ -248,8 +248,9 @@ class FBAIRI(ForwardBackward):
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
                     f"estimated image peak value "
-                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]\n",
                     flush=True,
+                    end="",
                 )
         else:
             self._prev_peak_val = self._im_peak_est
@@ -268,8 +269,9 @@ class FBAIRI(ForwardBackward):
                     f"INFO: channel {self._rank_ch_start + 1} - "
                     f"{self._rank_ch_start + self._rank_ch_num}, "
                     f"specified image peak value "
-                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]",
+                    f"[{', '.join(f'{val:#.4g}' for val in peak_val_list)}]\n",
                     flush=True,
+                    end="",
                 )
 
     def _each_iter_begin(self) -> None:
