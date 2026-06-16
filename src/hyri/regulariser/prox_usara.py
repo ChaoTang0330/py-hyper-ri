@@ -383,7 +383,7 @@ class ProxSARAPos(Regulariser):
             obj_val_prev = obj_val
             if self._verbose > 1 and self._rank == 0:
                 print(
-                    f"  Prox Iter {i+1}, prox_fval = {obj_val:.3e},",
+                    f"  Prox Iter {i+1}, prox_fval = {obj_val:.3e}, "
                     f"rel_fval = {obj_rel_var:.3e}, "
                     f"l1norm_w = {self._norm_l1.item():.3e}",
                     flush=True,
@@ -397,7 +397,8 @@ class ProxSARAPos(Regulariser):
 
         if self._verbose and self._rank == 0:
             print(
-                f"  Prox converged: Iter {i+1}, rel_fval = {obj_rel_var:.3e},",
+                f"  Prox converged: Iter {i+1}, prox_fval = {obj_val:.3e}, "
+                f"rel_fval = {obj_rel_var:.3e}, "
                 f"l1norm_w = {self._norm_l1.item():.3e}",
                 flush=True,
             )

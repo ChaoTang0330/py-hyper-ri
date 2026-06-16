@@ -137,10 +137,10 @@ def verbose_print(args: str, verbose: bool = True, end="\n") -> None:
 
     Args:
         args (str): Message text to print.
-        end (str, optional): String to append after the message.
-            Default: '\n'.
         verbose (bool, optional): If ``True``, print ``args`` to stdout.
             Default: True.
+        end (str, optional): String to append after the message.
+            Default: ``\\n``.
 
     Returns:
         None: This function does not return a value.
