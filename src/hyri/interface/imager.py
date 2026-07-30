@@ -102,10 +102,12 @@ def imager(param_optimiser: dict, param_measop: dict, param_proxop: dict) -> Non
     """
 
     # Set PyTorch flags for deterministic behaviour and runtime performance.
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
+    torch.backends.fp32_precision = "ieee"
+    torch.backends.cuda.matmul.fp32_precision = "ieee"
+    torch.backends.cudnn.fp32_precision = "ieee"
+
+    torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
-    torch.backends.cudnn.benchmark = True
 
     # Collect distributed-runtime metadata from environment variables.
     param_comm = {
