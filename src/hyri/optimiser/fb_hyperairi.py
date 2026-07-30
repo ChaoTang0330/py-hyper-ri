@@ -536,6 +536,7 @@ class FBHyperAIRI(ForwardBackward):
 
         # Update the spectral-index map once the image has stabilised enough.
         if self._spec_update:
+            self._spec_update_iter += 1
             if (
                 self._im_rel_var < self._spec_update_tol
                 or self._spec_update_iter >= self._spec_max_update_interval
@@ -548,8 +549,6 @@ class FBHyperAIRI(ForwardBackward):
                 )
                 spec_idx_map = self._update_spec_idx_map()
                 _ = self._regulariser.update(spec_idx=spec_idx_map)
-            else:
-                self._spec_update_iter += 1
 
             if self._spec_update_count >= self._spec_max_update_count:
                 self._spec_update = False
