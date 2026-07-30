@@ -53,8 +53,8 @@
         "__comment": "Denoisers",
         "airi": {
             "denoiser_comment_1": "airi params",
-            "heu_noise_scale": 1.0,
-            "dnn_shelf_path": "shelf_airi_oaid.csv",
+            "heu_noise_scale": 2.0,
+            "dnn_shelf_path": "shelf_airi_mix.csv",
             "im_peak_est": [],
             "dnn_adaptive_peak": true,
             "dnn_apply_transform": true
