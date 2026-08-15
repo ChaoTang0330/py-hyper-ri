@@ -417,7 +417,7 @@ class FBHyperSARA(ForwardBackward):
             print("********** END OF ALGORITHM **********", flush=True)
             print("**************************************\n", flush=True)
             print(
-                f"Imaging finished in {self._t_total:#.4g} sec,",
+                f"Imaging finished in {self._t_total:.1f} sec,",
                 f"total number of iterations {self._iter + 1}",
                 flush=True,
             )
