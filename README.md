@@ -105,7 +105,7 @@ Full documentation: [pyHyperRI documentation](https://chaotang0330.github.io/py-
 The documentation covers the input data format, general usage, configuration
 files, tutorials, and the API reference.
 
-To build the documentation locally, the packages under the dependency groups `docs` are required.
+To build the documentation locally, the packages under the dependency group `docs` are required.
 
 ```bash
 pip install -e ".[docs]"
