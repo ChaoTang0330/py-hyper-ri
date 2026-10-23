@@ -1,9 +1,8 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/_images/logo/pyHyperRI_logo_text_white.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/_images/logo/pyHyperRI_logo_text_black.svg">
-    <img src="docs/_images/logo/pyHyperRI_logo_text_black.svg" alt="pyHyperRI" height="96">
-  </picture>
+  <img src="docs/_images/logo/pyHyperRI_logo_text_white.svg#gh-dark-mode-only"
+       alt="pyHyperRI" height="96">
+  <img src="docs/_images/logo/pyHyperRI_logo_text_black.svg#gh-light-mode-only"
+       alt="pyHyperRI" height="96">
 </p>
 
 [![python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
