@@ -10,8 +10,9 @@
 [![pytorch](https://img.shields.io/badge/PyTorch-enabled-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](LICENSE)
 [![CI](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml)
+[![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://chaotang0330.github.io/py-hyper-ri/)
 
-<!-- TODO: Add PyPI version, documentation, DOI/Zenodo, and coverage badges once those services are available. -->
+<!-- TODO: Add PyPI version, DOI/Zenodo, and coverage badges once those services are available. -->
 
 pyHyperRI is a PyTorch-based platform for developing, testing, and
 benchmarking radio-interferometric (RI) imaging algorithms. The current package
@@ -77,12 +78,6 @@ For development on Linux with CUDA devices, install all optional dependencies:
 pip install -e ".[all]"
 ```
 
-To build the documentation locally:
-
-```bash
-make docs
-```
-
 To verify the installation, run
 
 ```bash
@@ -105,10 +100,17 @@ Use `hyri imaging --help` to inspect available command-line options.
 
 ## Documentation
 
-Full documentation: `<TODO: DOCS_URL>`
+Full documentation: [pyHyperRI documentation](https://chaotang0330.github.io/py-hyper-ri/).
 
 The documentation covers the input data format, general usage, configuration
 files, tutorials, and the API reference.
+
+To build the documentation locally, the packages under the dependency groups `docs` are required.
+
+```bash
+pip install -e ".[docs]"
+make docs
+```
 
 ## Citation
 

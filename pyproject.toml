@@ -29,6 +29,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/ChaoTang0330/py-hyper-ri"
+Documentation = "https://chaotang0330.github.io/py-hyper-ri/"
 Source = "https://github.com/ChaoTang0330/py-hyper-ri"
 Tracker = "https://github.com/ChaoTang0330/py-hyper-ri/issues"
 
