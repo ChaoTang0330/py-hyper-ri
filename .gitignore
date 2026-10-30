@@ -75,7 +75,6 @@ docs/api/generated/*
 .torchinductor_cache/
 
 # Tracked data/configuration exceptions
-!archive/
 !config/*.json
 !config/experiments/*.json
 !data/3c353_sim_vla_meas_hs/*.mat
