@@ -66,7 +66,7 @@ prerequisite `casacore` usually needs to be installed separately before installi
 For a source install:
 
 ```bash
-git clone <TODO: REPOSITORY_URL>
+git clone https://github.com/ChaoTang0330/py-hyper-ri.git
 cd py-hyper-ri
 pip install -e .
 ```
@@ -82,6 +82,17 @@ To verify the installation, run
 ```bash
 hyri --help
 ```
+
+We provide two Docker image variants with CUDA 12.8: development and runtime.
+The development image includes editable source code, all optional dependencies,
+tests, notebooks and documentation tools. The runtime image provides the installed
+package with CUDA and Measurement Set dependencies for running imaging workflows.
+Both images are available from
+[GitHub Container Registry](https://github.com/ChaoTang0330/py-hyper-ri/pkgs/container/py-hyper-ri).
+See the [Docker Images](https://chaotang0330.github.io/py-hyper-ri/installation.html#docker-images)
+section of the installation guide for image details and customisation, and
+[Run in a Container](https://chaotang0330.github.io/py-hyper-ri/usage.html#run-in-a-container)
+for container usage.
 
 ## Minimal Example
 

@@ -172,6 +172,37 @@ working `casacore` installation before installing `python-casacore`; refer to
 the [`casacore` installation guide](https://github.com/casacore/casacore#installation)
 for upstream instructions.
 
+(docker-images)=
+## Docker Images
+
+We provide two Docker images through
+[GitHub Container Registry](https://github.com/ChaoTang0330/py-hyper-ri/pkgs/container/py-hyper-ri),
+both based on official PyTorch images with CUDA 12.8 for `linux/amd64`:
+
+| Image tag | Purpose |
+| --- | --- |
+| `v1.0.0-dev` | Development with editable source, all optional dependencies, tests, notebooks and documentation tools. |
+| `v1.0.0-runtime` | Running imaging workflows with the installed package and CUDA/Measurement Set dependencies. |
+
+GPU use requires a compatible NVIDIA driver and
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+on the host.
+
+For instructions on running containers, see {ref}`Run in a Container <run-in-a-container>`.
+
+### Build the Images
+
+To build locally, run these commands from the repository root:
+
+```bash
+docker build --platform linux/amd64 --target development -t pyhyperri:v1.0.0-dev .
+docker build --platform linux/amd64 --target runtime -t pyhyperri:v1.0.0-runtime .
+```
+
+The same Dockerfile can be built with
+[Podman](https://docs.podman.io/en/latest/markdown/podman-build.1.html) by replacing
+`docker build` with `podman build`.
+
 ## Verify Installation
 
 Check that the package and top-level command-line tool are available.

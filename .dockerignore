@@ -1,0 +1,43 @@
+# Include only project inputs, rather than local environments or datasets.
+**
+!Dockerfile
+!.dockerignore
+!.gitignore
+!pyproject.toml
+!README.md
+!LICENSE
+!CITATION.cff
+!MANIFEST.in
+!Makefile
+!src/
+!src/**
+!test/
+!test/**
+!config/
+!config/**
+!scripts/
+!scripts/**
+!docs/
+!docs/**
+
+# Include the bundled example used by integration tests in the dev image.
+!data/
+!data/3c353_sim_vla_meas_hs/
+!data/3c353_sim_vla_meas_hs/data_ch_1.mat
+!data/3c353_sim_vla_meas_hs/data_ch_2.mat
+!data/3c353_sim_vla_meas_hs/dirty_normalised.fits
+!data/3c353_sim_vla_meas_hs/groundtruth.fits
+!data/3c353_sim_vla_meas_hs/msSpecs.mat
+!data/3c353_sim_vla_meas_hs/psf.fits
+
+# Exclude generated files even within the included directories.
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.ipynb_checkpoints/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.DS_Store
+docs/_build/
+docs/api/generated/

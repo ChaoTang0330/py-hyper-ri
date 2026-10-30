@@ -74,6 +74,34 @@ file:
 `--run_id`:
 : Optional identifier appended to output file prefixes.
 
+(run-in-a-container)=
+## Run in a Container
+
+See {ref}`Docker Images <docker-images>` for the available images and
+GPU requirements. The runtime image already includes pyHyperRI, so a source
+checkout is not needed to run imaging jobs.
+
+The same images can also run with [Podman](https://docs.podman.io/en/latest/markdown/podman-run.1.html)
+or in [Kubernetes Pods](https://kubernetes.io/docs/concepts/containers/images/),
+with volume mounts and GPU access configured for the chosen environment.
+
+Both images start Bash. Use `-it` for an interactive shell, or pass
+`-c 'hyri ...'` after the image name to run a command directly.
+
+For example, to run an imaging pipeline defined in a configuration file, one can use:
+
+```bash
+docker run --rm --gpus all --shm-size=2g \
+  --mount type=bind,source="$(pwd)",target=/workspace \
+  ghcr.io/chaotang0330/py-hyper-ri:v1.0.0-runtime \
+  -c 'hyri imaging --config "<CONFIG_FILE>"'
+```
+
+`$(pwd)` is your current host directory, mounted at `/workspace` inside the container.
+Replace `<CONFIG_FILE>` with the configuration file's path inside the container.
+Set `result_path` to a directory under `/workspace`, so outputs remain on the host
+after the container exits.
+
 ## Select Channels
 
 pyHyperRI can load a range of physical channels and group them into effective
