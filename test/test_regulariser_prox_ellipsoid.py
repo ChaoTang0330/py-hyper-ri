@@ -56,6 +56,7 @@ def test_ellipsoid_keeps_feasible_point_unchanged() -> None:
         center=center,
         precond_weight=[torch.ones(1, dtype=dtype) for _ in range(channels)],
         radius=radius,
+        rank_num_ch=channels,
         itr_min=1,
         itr_max=3,
         rel_var_tol=1e-8,

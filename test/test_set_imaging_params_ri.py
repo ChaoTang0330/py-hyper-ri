@@ -284,10 +284,11 @@ def test_set_imaging_params_ri_nufft_oversampling_and_grid_size(tmp_path: Path) 
         }
     )
 
-    param_measop, _, _ = set_imaging_params_ri(param_general)
+    param_measop, _, param_optimiser = set_imaging_params_ri(param_general)
 
-    # grid_size = oversampling * img_size
-    assert param_measop["nufft_grid_size"] == (192, 128)
+    # Image and grid sizes follow tensor axis order: (height, width).
+    assert param_optimiser["img_size"] == (64, 128)
+    assert param_measop["nufft_grid_size"] == (96, 256)
 
 
 def test_set_imaging_params_ri_nufft_package_invalid_fallback(tmp_path: Path) -> None:

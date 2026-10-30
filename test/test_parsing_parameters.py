@@ -10,15 +10,23 @@ import pytest
 
 from hyri.interface.io import parsing_parameters
 
+EXAMPLE_DATA_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "3c353_sim_vla_meas_hs"
+)
 
-def _write_config(tmp_path: Path, algorithm: str = "airi") -> Path:
-    """Create a minimal valid config JSON file for parsing_parameters tests."""
+
+def _write_config(
+    tmp_path: Path,
+    algorithm: str = "airi",
+    data_file: Path = EXAMPLE_DATA_PATH,
+) -> Path:
+    """Create a minimal config using bundled example data unless overridden."""
     config_obj = [
         {
             "__comment": "Main",
             "main": {
                 "src_name": "base-src",
-                "data_file": "data/base.mat",
+                "data_file": str(data_file),
                 "result_path": "results/base",
                 "algorithm": algorithm,
                 "im_dim_x": 64,
@@ -142,13 +150,33 @@ def test_parsing_parameters_merges_main_general_and_algo_sections(
     assert "denoiser_comment_1" not in param
 
 
-def test_parsing_parameters_uses_packaged_default_when_config_is_missing() -> None:
+@pytest.mark.parametrize("config_file", [None, ""])
+def test_parsing_parameters_uses_packaged_default_when_config_is_missing(
+    config_file: str | None,
+) -> None:
     """A missing config argument should load the bundled default template."""
-    param = parsing_parameters(None)
+    param = parsing_parameters(
+        config_file, input_param=argparse.Namespace(data_file=str(EXAMPLE_DATA_PATH))
+    )
 
+    assert param["data_file"] == str(EXAMPLE_DATA_PATH)
     assert param["algorithm"] == "usara"
     assert param["nufft_package"] == "finufft"
     assert param["heu_reg_param_scale"] == 1.0
+
+
+def test_parsing_parameters_requires_data_file_with_packaged_default() -> None:
+    """The bundled config still requires an input data path from the user."""
+    with pytest.raises(ValueError, match="Data file not specified"):
+        parsing_parameters(None)
+
+
+def test_parsing_parameters_rejects_missing_data_file(tmp_path: Path) -> None:
+    """A config referring to a nonexistent input data file should fail."""
+    config_path = _write_config(tmp_path, data_file=tmp_path / "missing.mat")
+
+    with pytest.raises(FileNotFoundError, match="Data file not found"):
+        parsing_parameters(str(config_path))
 
 
 def test_parsing_parameters_rejects_explicit_missing_config() -> None:
