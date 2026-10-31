@@ -215,12 +215,11 @@ def load_data_to_tensor(
         verbose_general,
     )
     data["freqs"] = np.zeros(ch_effctive, dtype=np.float64)
+    ch_group_start = ch_start
     for ch, ch_cat_num in enumerate(ch_partition):
-        data["freqs"][ch] = np.mean(
-            freqs_physical[
-                ch_start + ch * ch_cat_num : ch_start + (ch + 1) * ch_cat_num
-            ]
-        )
+        ch_group_end = ch_group_start + ch_cat_num
+        data["freqs"][ch] = np.mean(freqs_physical[ch_group_start:ch_group_end])
+        ch_group_start = ch_group_end
 
     # Derive per-rank channel ranges in distributed mode.
     rank_ch_start = ch_start
@@ -417,6 +416,7 @@ def load_data_to_tensor(
     data["image_pixel_size"] = image_pixel_size
     halfSpatialBandwidth = (180.0 / np.pi) * 3600.0 / (image_pixel_size) / 2.0
 
+    rank_ch_partition = ch_partition[rank_eff_ch_start:rank_eff_ch_last]
     for ch in range(rank_eff_ch_last - rank_eff_ch_start):
         # Initialise empty tensors for one effective channel.
         data["u"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
@@ -427,7 +427,9 @@ def load_data_to_tensor(
         data["precond_weight"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
         data["y"].append(torch.empty(1, 1, 0, dtype=dtype, device=device))
 
-        for ch_physical in range(sum(ch_partition[:ch]), sum(ch_partition[: ch + 1])):
+        for ch_physical in range(
+            sum(rank_ch_partition[:ch]), sum(rank_ch_partition[: ch + 1])
+        ):
             # Convert UVW coordinates and append them as torch tensors.
             data["u"][ch] = torch.cat(
                 (
