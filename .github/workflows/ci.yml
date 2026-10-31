@@ -4,11 +4,18 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# Cancel an older release build when the same version tag is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_type == 'tag' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.ref_type == 'tag' }}
 
 env:
   PIP_NO_CACHE_DIR: "1"
@@ -97,6 +104,130 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: docs/_build/html
+
+  release:
+    name: Build Python release
+    needs: [quality, tests, docs]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Check tag matches package version
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          from packaging.version import Version
+
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          version = project["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if Version(tag.removeprefix("v")) != Version(version):
+              raise SystemExit(f"Tag {tag} does not match package version {version}")
+          PY
+
+      - name: Build and validate distributions
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  docker:
+    name: Publish Docker image (${{ matrix.target }})
+    needs: [quality, tests, docs]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !github.event.deleted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: development
+            suffix: dev
+          - target: runtime
+            suffix: runtime
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: image
+        shell: bash
+        env:
+          IMAGE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          image_tag="${GITHUB_REF_NAME}-${IMAGE_SUFFIX}"
+          if [[ ! "$image_tag" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+            printf '::error::Invalid Docker image tag: %s\n' "$image_tag"
+            exit 1
+          fi
+          image_name=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          printf 'tag=ghcr.io/%s:%s\n' "$image_name" "$image_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Report disk space before build
+        run: df -h /
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=registry,ref=${{ steps.image.outputs.tag }}
+          cache-to: type=inline
+
+      - name: Report disk space after build
+        if: always()
+        run: df -h /
 
   deploy-docs:
     name: Deploy docs to GitHub Pages
