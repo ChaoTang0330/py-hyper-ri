@@ -125,11 +125,11 @@ different setups. See the PyTorch distributed documentation for details.
 
 ## Single node with torchrun
 
-The `hyri-imaging` command can be launched directly with `torchrun`.
+Launch imaging through the `hyri` Python module with `torchrun -m`.
 
 ```bash
 torchrun --standalone --nnodes=1 --nproc-per-node=4 \
-  hyri-imaging \
+  -m hyri imaging \
     --config "config/tutorial_hs.json" \
     --algorithm "hyperairi" \
     --data_file "data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40" \
@@ -307,7 +307,7 @@ spec:
                 --node-rank="${JOB_COMPLETION_INDEX}" \
                 --master-addr="${MASTER_ADDR}" \
                 --master-port="${MASTER_PORT}" \
-                hyri-imaging \
+                -m hyri imaging \
                   --config "config/tutorial_hs.json" \
                   --algorithm "hyperairi" \
                   --data_file "data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40" \

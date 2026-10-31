@@ -341,7 +341,7 @@ The number of processes must not exceed `ch_effective`.
 
 ```bash
 torchrun --standalone --nproc-per-node=4 \
-  hyri imaging \
+  -m hyri imaging \
   --algorithm hyper-usara \
   --data_file <DATA_DIRECTORY> \
   --ch_start 1 \
