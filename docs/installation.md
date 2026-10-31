@@ -82,7 +82,7 @@ pip install "pyHyperRI[cuda]"
 Install the package from a local source checkout.
 
 ```bash
-git clone <TODO: REPO_URL>
+git clone https://github.com/ChaoTang0330/py-hyper-ri.git
 cd py-hyper-ri
 pip install -e .
 ```

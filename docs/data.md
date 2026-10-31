@@ -94,14 +94,17 @@ for command-line usage.
 
 ## Example Data
 
-Example hyperspectral measurement files are available under:
+Example hyperspectral measurement files are available in the
+[source repository](https://github.com/ChaoTang0330/py-hyper-ri/tree/main/data/3c353_sim_vla_meas_hs)
+under:
 
 ```text
 data/3c353_sim_vla_meas_hs/
 ```
 
-This directory follows the expected layout with `msSpecs.mat` and per-channel
-data files.
+Place the `3c353_sim_vla_meas_hs` folder under `./data` in your working
+directory before running the minimal example. This directory follows the
+expected layout with `msSpecs.mat` and per-channel data files.
 
 ## Note
 

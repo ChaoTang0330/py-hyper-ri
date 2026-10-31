@@ -23,41 +23,34 @@ Jobs.
 
 ## Tutorial data and config
 
-This tutorial uses one hyperspectral 3C353 measurement set with 36
+This tutorial uses one hyperspectral 3C 353 measurement set with 36
 frequency channels:
 
 ```text
-3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40
+id_00_3c353_dt_9.46_6.21_freqratio_1.70
 ```
 
 It is a simulated measurement from the test set in [Tang et al. (2026)](#ref-tang-2026),
-and is available from Zenodo:
+and is available from
+[Zenodo](https://doi.org/10.5281/zenodo.23601176) in the archive `simulated_hyper_vla_0.zip`.
 
-```text
-<ZENODO_LINK_TODO>
-```
-
-Download the archive and unzip it under `data/`:
-
-```bash
-mkdir -p data
-curl -L -o data/pyhyperri_tutorial_data.zip <ZENODO_LINK_TODO>
-unzip data/pyhyperri_tutorial_data.zip -d data/
-```
+Download the archive containing this measurement folder from the Zenodo record
+and extract it under `data/`.
 
 The configuration file used in this tutorial is `config/tutorial_hs.json`. If
 you are following the tutorial outside a source checkout, download the config
 file from the repository:
 
 ```bash
+mkdir -p config
 curl -L -o config/tutorial_hs.json \
-  https://raw.githubusercontent.com/ChaoTang0330/<TODO_GITHUB_REPO>/main/config/tutorial_hs.json
+  https://raw.githubusercontent.com/ChaoTang0330/py-hyper-ri/main/config/tutorial_hs.json
 ```
 
 All launch examples below assume the measurement folder is available at:
 
 ```text
-data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40
+data/id_00_3c353_dt_9.46_6.21_freqratio_1.70
 ```
 
 ## Imaging configuration file
@@ -132,7 +125,7 @@ torchrun --standalone --nnodes=1 --nproc-per-node=4 \
   -m hyri imaging \
     --config "config/tutorial_hs.json" \
     --algorithm "hyperairi" \
-    --data_file "data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40" \
+    --data_file "data/id_00_3c353_dt_9.46_6.21_freqratio_1.70" \
     --result_path "results/tutorial_hs"
 ```
 
@@ -184,7 +177,7 @@ set -euo pipefail
 
 export CONFIG="config/tutorial_hs.json"
 export ALGORITHM="hyperairi"
-export DATA_DIR="data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40"
+export DATA_DIR="data/id_00_3c353_dt_9.46_6.21_freqratio_1.70"
 export RESULT_DIR="results/tutorial_hs"
 
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
@@ -310,7 +303,7 @@ spec:
                 -m hyri imaging \
                   --config "config/tutorial_hs.json" \
                   --algorithm "hyperairi" \
-                  --data_file "data/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40" \
+                  --data_file "data/id_00_3c353_dt_9.46_6.21_freqratio_1.70" \
                   --result_path "results/tutorial_hs"
           volumeMounts:
             - name: tutorial
@@ -342,7 +335,7 @@ For the commands in this tutorial, the default `src_name` is the measurement
 folder name, so the expected output directory is:
 
 ```text
-results/tutorial_hs/3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40
+results/tutorial_hs/id_00_3c353_dt_9.46_6.21_freqratio_1.70
 ```
 
 The following scripts can be used to visualise the results. Here we show the dirty image,
@@ -358,7 +351,7 @@ from astropy.io import fits
 
 result_dir = Path(
     "./results/tutorial_hs/"
-    "3c353_uvw_id_00_dt_9.46_6.21_freqratio_1.70_nfreq_36_rotation_330.40"
+    "id_00_3c353_dt_9.46_6.21_freqratio_1.70"
 )
 
 

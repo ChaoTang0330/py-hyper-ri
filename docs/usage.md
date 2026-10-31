@@ -304,7 +304,7 @@ If `run_id` is set, `runID_<run_id>_` is appended to the prefix.
 
 Runtime logs are printed to standard output. In batch systems, capture stdout
 and stderr with the scheduler options. Metrics are not computed automatically
-by `hyri imaging`; helper scripts for evaluation are available under `scripts`.
+by `hyri imaging`.
 
 ## Examples
 

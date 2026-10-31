@@ -96,8 +96,9 @@ for container usage.
 
 ## Minimal Example
 
-Run an imaging job by providing the algorithm, super-resolution factor, and
-measurement directory:
+Example measurements are available in the repository's
+[`3c353_sim_vla_meas_hs`](https://github.com/ChaoTang0330/py-hyper-ri/tree/main/data/3c353_sim_vla_meas_hs)
+folder. Place this folder under `./data` in your working directory, then run:
 
 ```bash
 hyri imaging \
