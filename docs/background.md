@@ -123,7 +123,7 @@ spectral index map and a spectral curvature map:
 $$
 \overline{x}_l =
 \overline{x}_0
-\left(\frac{\nu_l}{\nu_0}\right)^{-\alpha + \beta \log(\nu_l / \nu_0)}.
+\left(\frac{\nu_l}{\nu_0}\right)^{\alpha + \beta \log(\nu_l / \nu_0)}.
 $$
 
 Here $\nu_l$ is the frequency of channel $l$, $\nu_0$ is a reference
