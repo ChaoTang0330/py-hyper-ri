@@ -21,7 +21,7 @@ DEFAULT_DEVICE = torch.device("cpu")
 
 def load_data_to_tensor(
     uv_file_path: str,
-    super_resolution: float | None = 1.5,
+    super_resolution: float | None = None,
     image_pixel_size: float | None = None,
     data_weighting: bool = True,
     load_weight: bool = False,
@@ -52,7 +52,9 @@ def load_data_to_tensor(
     Args:
         uv_file_path (str): Path to the input data directory.
         super_resolution (float, optional): Super-resolution factor used when
-            pixel size is not explicitly provided. Default: 1.5.
+            pixel size is not explicitly provided. If None, use the
+            ``super_resolution`` value from ``msSpecs.mat``, or 1.5 when that
+            metadata is absent. Default: None.
         image_pixel_size (float, optional): Image pixel size in arcsec.
             Default: None.
         data_weighting (bool, optional): Whether to apply imaging weights.
@@ -369,26 +371,7 @@ def load_data_to_tensor(
 
     data["max_proj_baseline"] = max_proj_baseline
 
-    # Resolve pixel size from user input or super-resolution.
-    if (
-        "super_resolution" in data
-        and ms_specs["super_resolution"].item() != super_resolution
-    ):
-        verbose_print(
-            f"INFO: super resolution factor in the data file is "
-            f'{ms_specs["super_resolution"].item():#.4g}, '
-            f"while the user specified {super_resolution}.",
-            verbose_general,
-        )
-        verbose_print(
-            f"INFO: super resolution factor of "
-            f'{ms_specs["super_resolution"].item():#.4g} will be used.',
-            verbose_general,
-        )
-        super_resolution = ms_specs["super_resolution"].item()
-    elif "super_resolution" not in data:
-        data["super_resolution"] = super_resolution
-
+    # Explicit pixel size takes precedence over all super-resolution sources.
     spatial_bandwidth = 2 * data["max_proj_baseline"]
     if image_pixel_size:
         verbose_print(
@@ -404,6 +387,22 @@ def load_data_to_tensor(
             verbose_general,
         )
     else:
+        if super_resolution is None:
+            metadata_sr = ms_specs.get("super_resolution")
+            if metadata_sr is not None and metadata_sr.size > 0:
+                super_resolution = float(metadata_sr.item())
+                verbose_print(
+                    f"INFO: super resolution factor loaded from data file: "
+                    f"{super_resolution:#.4g}.",
+                    verbose_general,
+                )
+            else:
+                super_resolution = 1.5
+                verbose_print(
+                    f"INFO: super resolution factor is not specified, "
+                    f"using default: {super_resolution:#.4g}.",
+                    verbose_general,
+                )
         image_pixel_size = (
             (180.0 / np.pi) * 3600.0 / (super_resolution * spatial_bandwidth)
         )
@@ -413,6 +412,7 @@ def load_data_to_tensor(
             verbose_general,
         )
 
+    data["super_resolution"] = super_resolution
     data["image_pixel_size"] = image_pixel_size
     halfSpatialBandwidth = (180.0 / np.pi) * 3600.0 / (image_pixel_size) / 2.0
 

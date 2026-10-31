@@ -45,7 +45,8 @@ Optional fields:
 
 `super_resolution`:
 : Super-resolution factor used to derive the image pixel size when no explicit
-  pixel size is provided.
+  pixel size is provided and neither the command line nor the configuration
+  file supplies `superresolution`.
 
 ## Channel Data
 

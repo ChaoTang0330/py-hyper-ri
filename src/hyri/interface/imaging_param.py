@@ -119,12 +119,12 @@ def set_imaging_params_ri(
         param_measop["im_pixel_size"] = param_general["im_pixel_size"]
     else:
         param_measop["im_pixel_size"] = None
-    # Set super-resolution factor.
-    if (
-        param_general.get("superresolution", None)
-        and param_general["superresolution"] >= 1.0
-    ):
-        param_measop["superresolution"] = float(param_general["superresolution"])
+    # Preserve an unspecified factor so the loader can use measurement metadata.
+    super_resolution = param_general.get("superresolution")
+    if super_resolution is None or super_resolution == []:
+        param_measop["superresolution"] = None
+    elif super_resolution >= 1.0:
+        param_measop["superresolution"] = float(super_resolution)
     else:
         param_measop["superresolution"] = 1.0
 

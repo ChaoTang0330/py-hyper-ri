@@ -3,15 +3,20 @@ Unit tests for the data loading functionality of
 src.hyri.interface.load_data.load_data_to_tensor
 """
 
+import argparse
+import json
 import os
+from importlib.resources import files
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
-from scipy.io import savemat
+from scipy.io import loadmat, savemat
 
 import hyri.interface.load_data as load_data_module
+from hyri.interface.imaging_param import set_imaging_params_ri
+from hyri.interface.io import parsing_parameters
 from hyri.interface.load_data import load_data_to_tensor
 
 TEST_MEAS_PATH = os.path.join(
@@ -190,3 +195,113 @@ def test_distributed_unequal_channel_groups(
             complex(channel) for channel in channels for _ in range(4)
         ]
     assert data["freqs"].flatten().tolist() == pytest.approx([1e9, 2.5e9, 5e9])
+
+
+def _load_with_geometry(
+    measurement_dir: Path,
+    config_values: dict,
+    cli_values: dict,
+    metadata_sr: float | None = 3.0,
+) -> dict:
+    """Resolve CLI/config geometry and load a small measurement dataset."""
+    metadata_path = measurement_dir / "msSpecs.mat"
+    metadata = {
+        key: value
+        for key, value in loadmat(metadata_path).items()
+        if not key.startswith("__")
+    }
+    if metadata_sr is not None:
+        metadata["super_resolution"] = metadata_sr
+    savemat(metadata_path, metadata)
+
+    config = json.loads(files("hyri").joinpath("config/default.json").read_text())
+    main = config[0]["main"]
+    main.pop("superresolution")
+    main.pop("im_pixel_size")
+    main.update(
+        {
+            "data_file": str(measurement_dir),
+            "result_path": str(measurement_dir / "results"),
+            "ch_last": 1,
+            **config_values,
+        }
+    )
+    config[1]["flag"]["verbose"] = False
+    config_path = measurement_dir / "config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    params = parsing_parameters(str(config_path), argparse.Namespace(**cli_values))
+    meas_params, _, _ = set_imaging_params_ri(params)
+
+    return load_data_to_tensor(
+        str(measurement_dir),
+        super_resolution=meas_params["superresolution"],
+        image_pixel_size=meas_params["im_pixel_size"],
+        data_weighting=False,
+        ch_last=1,
+        ch_effctive=1,
+        verbose=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("config_values", "cli_values", "expected_sr"),
+    [
+        ({"superresolution": 2.0}, {"superresolution": 4.0}, 4.0),
+        ({"superresolution": 2.0}, {}, 2.0),
+        ({}, {"superresolution": 4.0}, 4.0),
+        ({}, {}, 3.0),
+        ({"superresolution": []}, {}, 3.0),
+        ({"superresolution": None}, {}, 3.0),
+    ],
+)
+def test_super_resolution_priority(
+    measurement_dir: Path,
+    config_values: dict,
+    cli_values: dict,
+    expected_sr: float,
+) -> None:
+    """CLI SR overrides config SR, which overrides measurement metadata."""
+    data = _load_with_geometry(measurement_dir, config_values, cli_values)
+
+    assert data["super_resolution"] == expected_sr
+    assert data["image_pixel_size"] == pytest.approx(
+        np.rad2deg(1.0) * 3600 / (2 * data["max_proj_baseline"] * expected_sr)
+    )
+
+
+def test_super_resolution_default_without_metadata(measurement_dir: Path) -> None:
+    """Use the loader default only when no source supplies an SR factor."""
+    data = _load_with_geometry(measurement_dir, {}, {}, metadata_sr=None)
+
+    assert data["super_resolution"] == 1.5
+
+
+@pytest.mark.parametrize(
+    ("config_values", "cli_values", "expected_pixel_size"),
+    [
+        (
+            {"superresolution": 2.0, "im_pixel_size": 1.0},
+            {"superresolution": 4.0, "im_pixel_size": 0.5},
+            0.5,
+        ),
+        (
+            {"superresolution": 2.0, "im_pixel_size": 1.0},
+            {"superresolution": 4.0},
+            1.0,
+        ),
+        ({"superresolution": 2.0}, {"im_pixel_size": 0.5}, 0.5),
+    ],
+)
+def test_explicit_pixel_size_overrides_super_resolution(
+    measurement_dir: Path,
+    config_values: dict,
+    cli_values: dict,
+    expected_pixel_size: float,
+) -> None:
+    """Explicit pixel size wins over SR from the CLI, config, and metadata."""
+    data = _load_with_geometry(measurement_dir, config_values, cli_values)
+
+    assert data["image_pixel_size"] == expected_pixel_size
+    assert data["super_resolution"] == pytest.approx(
+        np.rad2deg(1.0) * 3600 / (2 * data["max_proj_baseline"] * expected_pixel_size)
+    )

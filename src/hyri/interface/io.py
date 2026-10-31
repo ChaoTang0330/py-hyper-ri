@@ -370,6 +370,9 @@ def parsing_parameters(
 
     # Start from the main config section.
     param = json_dict["main"]
+    # Keep optional geometry fields available for CLI overrides when omitted.
+    param.setdefault("im_pixel_size", None)
+    param.setdefault("superresolution", None)
     if input_param is not None:
         # Apply non-null CLI overrides for matching keys.
         dict_input_param = vars(input_param)

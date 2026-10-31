@@ -103,7 +103,11 @@ The parameters in the `main` section can be overridden by the corresponding comm
   pixel size from `superresolution` and the maximum projected baseline.
 
 `superresolution`:
-: Imaging super-resolution factor used when `im_pixel_size` is empty.
+: Imaging super-resolution factor used when `im_pixel_size` is empty. Priority
+  is command line, configuration file, then `super_resolution` in `msSpecs.mat`.
+  Omit this field or leave it empty to use the data-file value. If no source
+  supplies a value, the factor defaults to `1.5`. The packaged template
+  explicitly sets `1.5` as a configuration value.
 
 `run_id`:
 : Optional identification number for the current run. If provided, it is
@@ -145,6 +149,11 @@ The parameters in the `main` section can be overridden by the corresponding comm
 `meas_device`:
 : Device that the measurement operators run on. Valid values are `cpu`, `cuda`,
   `mps`, and `xpu`; unavailable devices fall back to `cpu`.
+
+```{note}
+When `nufft_package` is `finufft`, `meas_device` must be `cpu` or `cuda`:
+the `pytorch-finufft` backend currently supports CPU and NVIDIA CUDA only.
+```
 
 `meas_dtype`:
 : Numeric precision accepted and returned by the measurement operators. Valid
