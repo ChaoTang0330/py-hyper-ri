@@ -10,6 +10,10 @@ Thumbs.db
 .codex
 .codex/
 
+# Intermediate files
+/archive/
+/scripts/
+
 # Logs and scheduler output
 logs/
 *.log

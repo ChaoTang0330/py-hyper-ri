@@ -15,8 +15,6 @@
 !test/**
 !config/
 !config/**
-!scripts/
-!scripts/**
 !docs/
 !docs/**
 
