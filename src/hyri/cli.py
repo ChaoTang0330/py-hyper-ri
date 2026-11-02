@@ -38,7 +38,7 @@ def run_hyri() -> None:
         print("  hyri config", flush=True)
         print("  hyri ms2mat --help", flush=True)
         print("\nUse 'hyri <command> --help' for command-specific options.", flush=True)
-        print("Documentation: <TODO: doc link>", flush=True)
+        print("Documentation: https://chaotang0330.github.io/py-hyper-ri/", flush=True)
         return
 
     command_name = sys.argv[1]
