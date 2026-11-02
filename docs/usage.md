@@ -220,6 +220,7 @@ The packaged denoiser shelf CSV files are installed as package data under
 
 - `shelf_airi_oaid.csv`
 - `shelf_airi_mrid.csv`
+- `shelf_airi_mix.csv`
 - `shelf_hyperairi_mix.csv`
 
 For AIRI family of algorithms, set `dnn_shelf_path` in the matching algorithm
@@ -232,7 +233,7 @@ hyri imaging \
   --dnn_shelf_path shelf_airi_oaid.csv
 ```
 
-Besides the three packaged shelves, users can create custom shelves with
+In addition to the packaged shelves, users can create custom shelves with
 compatible ONNX denoisers. Custom denoisers are supported by providing a 
 shelf CSV maps training noise levels to ONNX model files:
 

@@ -161,12 +161,6 @@ If the import fails with a GSL library error, reinstall GSL from conda-forge:
 conda install conda-forge::gsl --force-reinstall
 ```
 
-For a source checkout on macOS, replace the final command with:
-
-```bash
-pip install -e .
-```
-
 Windows users need a
 working `casacore` installation before installing `python-casacore`; refer to
 the [`casacore` installation guide](https://github.com/casacore/casacore#installation)

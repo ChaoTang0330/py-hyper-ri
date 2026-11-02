@@ -63,7 +63,7 @@ fields when provided.
 The parameters in the `main` section can be overridden by the corresponding command-line options.
 
 `src_name`:
-: Experiment or target source name tag used in the output file names. If empty,
+: Source or experiment tag used for the output subdirectory name. If empty,
   pyHyperRI uses the input data directory name.
 
 `data_file`:
