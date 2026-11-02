@@ -127,6 +127,40 @@ def measurement_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.mark.parametrize("ch_start", [1, 2])
+def test_packaged_default_loads_all_remaining_channels(
+    measurement_dir: Path, ch_start: int
+) -> None:
+    """An empty last-channel setting in the bundled config reaches the loader."""
+    args = argparse.Namespace(
+        data_file=str(measurement_dir),
+        result_path=str(measurement_dir / "results"),
+        ch_start=ch_start,
+    )
+    params = parsing_parameters(None, args)
+    meas, _, optimiser = set_imaging_params_ri(params)
+    assert optimiser["ch_last"] is None
+
+    data = load_data_to_tensor(
+        optimiser["data_file"],
+        super_resolution=meas["superresolution"],
+        image_pixel_size=meas["im_pixel_size"],
+        data_weighting=False,
+        ch_start=optimiser["ch_start"],
+        ch_last=optimiser["ch_last"],
+        ch_effctive=optimiser["ch_effective"],
+        ch_partition=optimiser["ch_partition"],
+        verbose=False,
+    )
+
+    channels = list(range(ch_start, 7))
+    assert len(data["y"]) == 1
+    assert data["y"][0].flatten().tolist() == [
+        complex(channel) for channel in channels for _ in range(4)
+    ]
+    assert data["freqs"].item() == pytest.approx(np.mean(channels) * 1e9)
+
+
 @pytest.mark.parametrize(
     ("ch_start", "partition", "expected_freqs_ghz"),
     [

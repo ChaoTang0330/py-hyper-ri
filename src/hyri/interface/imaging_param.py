@@ -93,7 +93,7 @@ def set_imaging_params_ri(
     param_optimiser["ch_start"] = int(param_general.get("ch_start", 1))
     if param_optimiser["ch_start"] < 1:
         param_optimiser["ch_start"] = 1
-    param_optimiser["ch_last"] = int(param_general.get("ch_last", 0))
+    param_optimiser["ch_last"] = int(param_general.get("ch_last") or 0)
     if param_optimiser["ch_last"] < param_optimiser["ch_start"]:
         param_optimiser["ch_last"] = None
     param_optimiser["ch_effective"] = int(param_general.get("ch_effective", 1))

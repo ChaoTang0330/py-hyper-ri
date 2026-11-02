@@ -4,6 +4,7 @@ Unit tests for set_imaging_params_ri in imaging parameter utilities.
 
 from pathlib import Path
 
+import pytest
 import torch
 
 from hyri.interface.imaging_param import set_imaging_params_ri
@@ -66,6 +67,22 @@ def test_set_imaging_params_ri_usara_branch_defaults(tmp_path: Path) -> None:
     assert param_optimiser["im_max_outer_itr"] == 7
     assert param_optimiser["im_var_outer_tol"] == 2e-4
     assert "uSARA_heuRegScale_2.0_" in param_optimiser["file_prefix"]
+
+
+@pytest.mark.parametrize(
+    ("ch_last", "expected"),
+    [([], None), (None, None), (0, None), (4, 4)],
+)
+def test_set_imaging_params_ri_last_channel_limit(
+    tmp_path: Path, ch_last: int | list[int] | None, expected: int | None
+) -> None:
+    """Empty limits select all remaining channels; explicit limits are retained."""
+    params = _base_param_general()
+    params.update({"result_path": str(tmp_path), "ch_start": 2, "ch_last": ch_last})
+
+    _, _, optimiser = set_imaging_params_ri(params)
+
+    assert optimiser["ch_last"] == expected
 
 
 def test_set_imaging_params_ri_channel_partition_overrides_effective(
