@@ -100,7 +100,7 @@ jobs:
           path: docs/_build/html
 
       - name: Upload GitHub Pages artifact
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && !github.event.deleted
         uses: actions/upload-pages-artifact@v4
         with:
           path: docs/_build/html
@@ -238,8 +238,8 @@ jobs:
 
   deploy-docs:
     name: Deploy docs to GitHub Pages
-    needs: [quality, tests, docs]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [docs]
+    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && !github.event.deleted
     runs-on: ubuntu-latest
     permissions:
       pages: write
