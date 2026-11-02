@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     PIP_CONSTRAINT=/opt/pytorch-constraints.txt
 
 # Capture this base's versions without pulling the runtime image.
@@ -51,6 +52,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
     PIP_CONSTRAINT=/opt/pytorch-constraints.txt
 
 # Capture this base's versions without pulling the development image.
