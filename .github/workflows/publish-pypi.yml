@@ -1,0 +1,76 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release packages
+    if: startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && !github.event.release.draft
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/pyHyperRI/
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Publish the same distributions that were attached to the draft release.
+      - name: Download release packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --dir dist \
+            --pattern '*.whl' --pattern '*.tar.gz'
+
+      - name: Install validation tools
+        run: python -m pip install packaging twine
+
+      - name: Validate package name and release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from packaging.utils import parse_sdist_filename, parse_wheel_filename
+          from packaging.version import Version
+
+          version = Version(os.environ["RELEASE_TAG"].removeprefix("v"))
+          if version.is_prerelease or version.is_devrelease:
+              raise SystemExit("Only stable versions may be published by this workflow")
+
+          wheels = list(Path("dist").glob("*.whl"))
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit("Expected exactly one wheel and one source distribution")
+
+          for path, parser in (
+              (wheels[0], parse_wheel_filename),
+              (sdists[0], parse_sdist_filename),
+          ):
+              name, package_version, *_ = parser(path.name)
+              if name != "pyhyperri" or package_version != version:
+                  raise SystemExit(f"Unexpected package for this release: {path.name}")
+          PY
+          python -m twine check --strict dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
