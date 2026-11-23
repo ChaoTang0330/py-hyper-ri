@@ -1,17 +1,18 @@
 <p align="center">
-  <img src="docs/_images/logo/pyHyperRI_logo_text_white.svg#gh-dark-mode-only"
+  <img src="https://raw.githubusercontent.com/ChaoTang0330/py-hyper-ri/main/docs/_images/logo/pyHyperRI_logo_text_white.svg#gh-dark-mode-only"
        alt="pyHyperRI" height="96">
-  <img src="docs/_images/logo/pyHyperRI_logo_text_black.svg#gh-light-mode-only"
+  <img src="https://raw.githubusercontent.com/ChaoTang0330/py-hyper-ri/main/docs/_images/logo/pyHyperRI_logo_text_black.svg#gh-light-mode-only"
        alt="pyHyperRI" height="96">
 </p>
 
 [![python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![pytorch](https://img.shields.io/badge/PyTorch-enabled-EE4C2C.svg?style=flat&logo=pytorch)](https://pytorch.org)
-[![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/pyHyperRI.svg)](https://pypi.org/project/pyHyperRI/)
+[![license](https://img.shields.io/badge/license-BSD--3--Clause-brightgreen.svg)](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/LICENSE)
 [![CI](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaoTang0330/py-hyper-ri/actions/workflows/ci.yml)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://chaotang0330.github.io/py-hyper-ri/)
 
-<!-- TODO: Add PyPI version, DOI/Zenodo, and coverage badges once those services are available. -->
+<!-- TODO: Add DOI once available. -->
 
 pyHyperRI is a PyTorch-based platform for developing, testing, and
 benchmarking radio-interferometric (RI) imaging algorithms. The current package
@@ -126,17 +127,17 @@ make docs
 ## Citation
 
 If you use pyHyperRI, please cite this software repository using the metadata in
-[`CITATION.cff`](CITATION.cff). If you use specific implemented methods, please
+[`CITATION.cff`](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/CITATION.cff). If you use specific implemented methods, please
 also cite the relevant method papers listed in the documentation.
 
 ## License
 
-pyHyperRI is distributed under the [BSD 3-Clause License](LICENSE).
+pyHyperRI is distributed under the [BSD 3-Clause License](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/LICENSE).
 
 ## Dependencies
 
 pyHyperRI builds on several external packages. The full dependency list is declared in
-[`pyproject.toml`](pyproject.toml). Main dependencies and their associated references are listed below.
+[`pyproject.toml`](https://github.com/ChaoTang0330/py-hyper-ri/blob/main/pyproject.toml). Main dependencies and their associated references are listed below.
 
 | Package | Reference |
 | --- | --- |

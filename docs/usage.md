@@ -93,7 +93,7 @@ For example, to run an imaging pipeline defined in a configuration file, one can
 ```bash
 docker run --rm --gpus all --shm-size=2g \
   --mount type=bind,source="$(pwd)",target=/workspace \
-  ghcr.io/chaotang0330/py-hyper-ri:v1.0.0-runtime \
+  ghcr.io/chaotang0330/py-hyper-ri:v1.0.1-runtime \
   -c 'hyri imaging --config "<CONFIG_FILE>"'
 ```
 

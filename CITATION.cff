@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use pyHyperRI, please cite this software repository. If you use specific methods implemented in the package, please also cite the relevant method papers listed in the documentation."
 title: "pyHyperRI: Python package for hyperspectral radio astronomical imaging"
-version: 1.0.0
+version: 1.0.1
 license: BSD-3-Clause
 repository-code: "https://github.com/ChaoTang0330/py-hyper-ri"
 url: "https://github.com/ChaoTang0330/py-hyper-ri"

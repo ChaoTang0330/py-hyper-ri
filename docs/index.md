@@ -46,8 +46,6 @@ Redistributed source or binary forms, with or without modification, must retain
 or reproduce the copyright notice, license conditions, and disclaimer as
 required by the license.
 
-<!-- TODO: Update repo website once decide repo name -->
-
 ## User Guide
 ```{toctree}
 :maxdepth: 1

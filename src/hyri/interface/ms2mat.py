@@ -25,7 +25,7 @@ else:
 CASA_IMPORT_MESSAGE = (
     "python-casacore is required for Measurement Set conversion.\n"
     "Check the installation instructions for details:\n"
-    "<TODO: add documentation link>. "
+    "https://chaotang0330.github.io/py-hyper-ri/installation.html#measurement-set-support"
 )
 
 

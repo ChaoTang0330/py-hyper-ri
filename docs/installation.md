@@ -175,8 +175,8 @@ both based on official PyTorch images with CUDA 12.8 for `linux/amd64`:
 
 | Image tag | Purpose |
 | --- | --- |
-| `v1.0.0-dev` | Development with editable source, all optional dependencies, tests, notebooks and documentation tools. |
-| `v1.0.0-runtime` | Running imaging workflows with the installed package and CUDA/Measurement Set dependencies. |
+| `v1.0.1-dev` | Development with editable source, all optional dependencies, tests, notebooks and documentation tools. |
+| `v1.0.1-runtime` | Running imaging workflows with the installed package and CUDA/Measurement Set dependencies. |
 
 GPU use requires a compatible NVIDIA driver and
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
@@ -189,8 +189,8 @@ For instructions on running containers, see {ref}`Run in a Container <run-in-a-c
 To build locally, run these commands from the repository root:
 
 ```bash
-docker build --platform linux/amd64 --target development -t pyhyperri:v1.0.0-dev .
-docker build --platform linux/amd64 --target runtime -t pyhyperri:v1.0.0-runtime .
+docker build --platform linux/amd64 --target development -t pyhyperri:v1.0.1-dev .
+docker build --platform linux/amd64 --target runtime -t pyhyperri:v1.0.1-runtime .
 ```
 
 The same Dockerfile can be built with

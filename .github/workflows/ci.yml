@@ -145,6 +145,26 @@ jobs:
               raise SystemExit(f"Tag {tag} does not match package version {version}")
           PY
 
+      # PyPI does not support GitHub's theme-specific image fragments.
+      # Modify only this job's checkout before building both distributions.
+      - name: Prepare README for PyPI
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path("README.md")
+          readme, count = re.subn(
+              r'\s*<img\b[^>]*#gh-dark-mode-only[^>]*>',
+              "",
+              path.read_text(encoding="utf-8"),
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one GitHub dark-mode logo")
+          readme = readme.replace("#gh-light-mode-only", "")
+          path.write_text(readme, encoding="utf-8")
+          PY
+
       - name: Build and validate distributions
         run: |
           python -m build

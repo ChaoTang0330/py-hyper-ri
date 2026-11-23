@@ -13,7 +13,7 @@ project = "pyHyperRI"
 author = "Chao Tang, Adrian Jackson"
 copyright = "2026, Chao Tang, Adrian Jackson, and contributors"
 
-release = "1.0.0"
+release = "1.0.1"
 version = release
 language = "en"
 
@@ -112,9 +112,7 @@ html_theme_options = {
         },
         {
             "name": "PyPI",
-            # TODO: Replace this with the package's PyPI project URL
-            # once it is available.
-            "url": "https://github.com/ChaoTang0330/py-hyper-ri",
+            "url": "https://pypi.org/project/pyHyperRI/",
             "icon": "fa-brands fa-python",
         },
     ],
